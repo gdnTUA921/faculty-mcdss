@@ -112,6 +112,24 @@ COMMENT ON COLUMN criteria.min_value  IS 'Lower bound for numeric normalization 
 COMMENT ON COLUMN criteria.max_value  IS 'Upper bound for numeric normalization to 0–1 scale.';
 
 
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE criterion_options (
+    id              UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    criterion_id    UUID            NOT NULL REFERENCES criteria (id) ON DELETE CASCADE,
+    label           VARCHAR(150)    NOT NULL,
+    value           VARCHAR(150)    NOT NULL,
+    score_value     DECIMAL(5,4)    CHECK (score_value >= 0 AND score_value <= 1),
+    display_order   INTEGER         NOT NULL DEFAULT 0,
+    CONSTRAINT uq_criterion_option UNIQUE (criterion_id, value)
+);
+
+COMMENT ON TABLE  criterion_options             IS 'Allowed options for select-type criteria. Each option maps to a normalized score value used in WSM computation.';
+COMMENT ON COLUMN criterion_options.label       IS 'Human-readable label shown in the form dropdown (e.g. "Master''s Degree").';
+COMMENT ON COLUMN criterion_options.value       IS 'Internal value stored in application_form_responses.raw_value.';
+COMMENT ON COLUMN criterion_options.score_value IS 'Pre-defined normalized score (0–1) for this option, used instead of min/max range normalization.';
+
+
 -- =============================================================================
 -- SECTION 3: HIRING ROUNDS
 -- =============================================================================
@@ -161,6 +179,7 @@ COMMENT ON COLUMN applicant_profiles.parsed_resume_data IS 'Raw structured JSON 
 -- -----------------------------------------------------------------------------
 
 CREATE TYPE application_status AS ENUM (
+    'draft',
     'applied',
     'for_interview',
     'for_review',
@@ -389,6 +408,9 @@ CREATE INDEX idx_positions_status            ON positions (status);
 
 -- criteria
 CREATE INDEX idx_criteria_position  ON criteria (position_id);
+
+-- criterion_options
+CREATE INDEX idx_criterion_options_criterion ON criterion_options (criterion_id);
 
 -- hiring_rounds
 CREATE INDEX idx_hiring_rounds_status ON hiring_rounds (status);

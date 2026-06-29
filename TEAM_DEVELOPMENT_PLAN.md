@@ -8,10 +8,10 @@
 
 | Label    | Name         | Primary Role                          |
 |----------|--------------|---------------------------------------|
-| Person 1 | _(name)_ | Project Lead / Laravel Backend        |
-| Person 2 | _(name)_      | Laravel Backend                       |
-| Person 3 | _(name)_      | Laravel Backend                       |
-| Person 4 | _(name)_      | Python / FastAPI (Resume Parser + ILP) |
+| Person 1 | Gian         | Project Lead / Laravel Backend        |
+| Person 2 | Peter        | Laravel Backend                       |
+| Person 3 | Lance        | Laravel Backend                       |
+| Person 4 | JB           | Python / FastAPI (Resume Parser + ILP) |
 
 ---
 

@@ -42,6 +42,14 @@ On first run, the Laravel container automatically runs `composer install` — th
 docker compose exec laravel php artisan migrate --seed
 ```
 
+### 5. Verify the FastAPI service
+```bash
+docker compose exec fastapi curl -s http://localhost:8001/health
+docker compose exec fastapi curl -s -H "X-Service-Key: changeme" http://localhost:8001/internal/db-health
+```
+
+If the second command returns a `503`, update `DB_PASSWORD` in `.env` so it matches your local PostgreSQL password.
+
 ---
 
 ## Daily Development
@@ -63,6 +71,7 @@ docker compose up -d
 | Laravel Health   | http://localhost:8000/up     | Returns OK if container is up |
 | FastAPI          | http://localhost:8001        |                            |
 | FastAPI Health   | http://localhost:8001/health |                            |
+| FastAPI DB Check  | http://localhost:8001/internal/db-health | Requires `X-Service-Key` |
 | Mailpit Web UI   | http://localhost:8025        | View captured emails (dev) |
 | PostgreSQL       | localhost:5432               | Local install — user: postgres / DB: faculty_mcdss |
 

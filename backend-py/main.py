@@ -3,7 +3,10 @@ from functools import lru_cache
 import os
 
 import psycopg2
+from psycopg2 import OperationalError
 from dotenv import load_dotenv
+import pulp
+from pydantic import BaseModel
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 
 
@@ -52,11 +55,149 @@ def create_readonly_connection():
 app = FastAPI(title="MCDSS Compute Service")
 
 
+class HealthResponse(BaseModel):
+    status: str
+
+
+class DatabaseHealthResponse(BaseModel):
+    status: str
+    database: str
+    host: str
+    reachable: bool
+    error: str | None = None
+
+
+class PositionCapacity(BaseModel):
+    position_id: int
+    capacity: int
+
+
+class ApplicantPreference(BaseModel):
+    position_id: int
+    score: float
+
+
+class ApplicantInput(BaseModel):
+    applicant_id: int
+    preferences: list[ApplicantPreference]
+
+
+class AssignmentPreviewRequest(BaseModel):
+    positions: list[PositionCapacity]
+    applicants: list[ApplicantInput]
+
+
+class AssignmentItem(BaseModel):
+    applicant_id: int
+    position_id: int
+    score: float
+
+
+class AssignmentPreviewResponse(BaseModel):
+    status: str
+    objective_score: float
+    assignments: list[AssignmentItem]
+
+
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> HealthResponse:
+    return HealthResponse(status="ok")
+
+
+@app.get("/internal/db-health", dependencies=[Depends(verify_service_key)])
+def db_health() -> DatabaseHealthResponse:
+    settings = get_settings()
+    connection = None
+    try:
+        connection = create_readonly_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "unavailable",
+                "database": settings.db_database,
+                "host": settings.db_host,
+                "reachable": False,
+                "error": str(exc).splitlines()[0],
+            },
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    return DatabaseHealthResponse(
+        status="ok",
+        database=settings.db_database,
+        host=settings.db_host,
+        reachable=True,
+    )
 
 
 @app.get("/internal/ping", dependencies=[Depends(verify_service_key)])
-def internal_ping() -> dict[str, str]:
-    return {"status": "ok"}
+def internal_ping() -> HealthResponse:
+    return HealthResponse(status="ok")
+
+
+@app.post("/internal/assignments/preview", dependencies=[Depends(verify_service_key)])
+def preview_assignments(payload: AssignmentPreviewRequest) -> AssignmentPreviewResponse:
+    position_capacities = {item.position_id: item.capacity for item in payload.positions}
+    candidate_scores: dict[tuple[int, int], float] = {}
+
+    for applicant in payload.applicants:
+        for preference in applicant.preferences:
+            candidate_scores[(applicant.applicant_id, preference.position_id)] = preference.score
+
+    problem = pulp.LpProblem("mcdss_assignment_preview", pulp.LpMaximize)
+    decision_variables: dict[tuple[int, int], pulp.LpVariable] = {}
+
+    for (applicant_id, position_id), score in candidate_scores.items():
+        decision_variables[(applicant_id, position_id)] = pulp.LpVariable(
+            f"assign_{applicant_id}_{position_id}",
+            lowBound=0,
+            upBound=1,
+            cat="Binary",
+        )
+
+    problem += pulp.lpSum(
+        score * decision_variables[(applicant_id, position_id)]
+        for (applicant_id, position_id), score in candidate_scores.items()
+    )
+
+    for applicant in payload.applicants:
+        problem += pulp.lpSum(
+            decision_variables[(applicant.applicant_id, preference.position_id)]
+            for preference in applicant.preferences
+            if (applicant.applicant_id, preference.position_id) in decision_variables
+        ) <= 1
+
+    for position_id, capacity in position_capacities.items():
+        problem += pulp.lpSum(
+            decision_variables[(applicant.applicant_id, position_id)]
+            for applicant in payload.applicants
+            if (applicant.applicant_id, position_id) in decision_variables
+        ) <= capacity
+
+    solver = pulp.PULP_CBC_CMD(msg=False)
+    problem.solve(solver)
+
+    assignments: list[AssignmentItem] = []
+    for (applicant_id, position_id), variable in decision_variables.items():
+        if pulp.value(variable) == 1:
+            assignments.append(
+                AssignmentItem(
+                    applicant_id=applicant_id,
+                    position_id=position_id,
+                    score=candidate_scores[(applicant_id, position_id)],
+                )
+            )
+
+    objective_score = float(pulp.value(problem.objective) or 0)
+
+    return AssignmentPreviewResponse(
+        status="ok",
+        objective_score=objective_score,
+        assignments=assignments,
+    )

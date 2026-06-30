@@ -1,0 +1,106 @@
+networks:
+  mcdss_network:
+    driver: bridge
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Laravel API  (PHP 8.3-FPM + Nginx via Supervisor)
+  # Requires the Laravel project to exist in backend-laravel/ first.
+  # See RUN.md for first-time setup instructions.
+  # Database: connects to your local PostgreSQL via host.docker.internal
+  # ---------------------------------------------------------------------------
+  laravel:
+    build:
+      context: ./backend-laravel
+      dockerfile: Dockerfile
+    container_name: mcdss_laravel
+    volumes:
+      - ./backend-laravel:/var/www
+    ports:
+      - "8000:80"
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_KEY: ${APP_KEY:-}
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: host.docker.internal
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-faculty_mcdss}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-mcdss_password}
+      MAIL_MAILER: smtp
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-noreply@mcdss.local}
+      FASTAPI_URL: http://fastapi:8001
+      FASTAPI_SECRET_KEY: ${FASTAPI_SECRET_KEY:-changeme}
+      SANCTUM_STATEFUL_DOMAINS: localhost:3000
+    depends_on:
+      - mailhog
+    networks:
+      - mcdss_network
+
+  # ---------------------------------------------------------------------------
+  # Python / FastAPI  (Resume Parser + ILP Solver)
+  # Database: connects to your local PostgreSQL via host.docker.internal
+  # ---------------------------------------------------------------------------
+  fastapi:
+    build:
+      context: ./backend-py
+      dockerfile: Dockerfile
+    container_name: mcdss_fastapi
+    volumes:
+      - ./backend-py:/app
+    ports:
+      - "8001:8001"
+    environment:
+      DB_HOST: host.docker.internal
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-faculty_mcdss}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-mcdss_password}
+      FASTAPI_SECRET_KEY: ${FASTAPI_SECRET_KEY:-changeme}
+    networks:
+      - mcdss_network
+
+  # ---------------------------------------------------------------------------
+  # Next.js Frontend
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mcdss_frontend
+    volumes:
+      - ./frontend:/app
+      # Isolate container's node_modules from the host so OS/arch differences
+      # don't cause conflicts (e.g. macOS host vs Linux container binaries).
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+      # Required for hot reload to work inside Docker on macOS.
+      # Docker's volume mounts don't trigger inotify events natively.
+      WATCHPACK_POLLING: "true"
+      NEXT_TELEMETRY_DISABLED: 1
+    depends_on:
+      - laravel
+    networks:
+      - mcdss_network
+
+  # ---------------------------------------------------------------------------
+  # Mailpit  — local SMTP capture (dev only), arm64-native Mailhog replacement
+  # SMTP : localhost:1025
+  # Web UI: http://localhost:8025
+  # ---------------------------------------------------------------------------
+  mailhog:
+    image: axllent/mailpit:latest
+    container_name: mcdss_mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - mcdss_network

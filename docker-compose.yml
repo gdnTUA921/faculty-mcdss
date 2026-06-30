@@ -36,6 +36,7 @@ services:
       MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-noreply@mcdss.local}
       FASTAPI_URL: http://fastapi:8001
       FASTAPI_SECRET_KEY: ${FASTAPI_SECRET_KEY:-changeme}
+      SESSION_DRIVER: file
       SANCTUM_STATEFUL_DOMAINS: localhost:3000
     depends_on:
       - mailhog

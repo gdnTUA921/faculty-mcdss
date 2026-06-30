@@ -99,6 +99,28 @@ class AssignmentPreviewResponse(BaseModel):
     assignments: list[AssignmentItem]
 
 
+class RankingApplicantInput(BaseModel):
+    applicant_id: int
+    score: float
+
+
+class RankingPreviewRequest(BaseModel):
+    position_id: int
+    applicants: list[RankingApplicantInput]
+
+
+class RankingItem(BaseModel):
+    rank: int
+    applicant_id: int
+    score: float
+
+
+class RankingPreviewResponse(BaseModel):
+    status: str
+    position_id: int
+    rankings: list[RankingItem]
+
+
 @app.get("/health")
 def health() -> HealthResponse:
     return HealthResponse(status="ok")
@@ -200,4 +222,23 @@ def preview_assignments(payload: AssignmentPreviewRequest) -> AssignmentPreviewR
         status="ok",
         objective_score=objective_score,
         assignments=assignments,
+    )
+
+
+@app.post("/internal/rankings/preview", dependencies=[Depends(verify_service_key)])
+def preview_rankings(payload: RankingPreviewRequest) -> RankingPreviewResponse:
+    ordered_applicants = sorted(
+        payload.applicants,
+        key=lambda applicant: (-applicant.score, applicant.applicant_id),
+    )
+
+    rankings = [
+        RankingItem(rank=index, applicant_id=applicant.applicant_id, score=applicant.score)
+        for index, applicant in enumerate(ordered_applicants, start=1)
+    ]
+
+    return RankingPreviewResponse(
+        status="ok",
+        position_id=payload.position_id,
+        rankings=rankings,
     )

@@ -119,3 +119,31 @@ def test_assignment_preview_returns_best_matches():
             {"applicant_id": 102, "position_id": 2, "score": 99.0},
         ],
     }
+
+
+def test_ranking_preview_orders_applicants_by_score():
+    payload = {
+        "position_id": 7,
+        "applicants": [
+            {"applicant_id": 301, "score": 88.5},
+            {"applicant_id": 302, "score": 95.0},
+            {"applicant_id": 303, "score": 95.0},
+        ],
+    }
+
+    response = client.post(
+        "/internal/rankings/preview",
+        headers={"X-Service-Key": "changeme"},
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "position_id": 7,
+        "rankings": [
+            {"rank": 1, "applicant_id": 302, "score": 95.0},
+            {"rank": 2, "applicant_id": 303, "score": 95.0},
+            {"rank": 3, "applicant_id": 301, "score": 88.5},
+        ],
+    }

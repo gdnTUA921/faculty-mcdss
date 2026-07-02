@@ -5,6 +5,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -15,10 +16,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
-
-    public $incrementing = false;
-    protected $keyType   = 'string';
+    use HasApiTokens, HasFactory, Notifiable, HasUuids;
 
     // No remember_token column in schema — Sanctum handles sessions via tokens
     public function getRememberTokenName(): ?string
@@ -34,5 +32,10 @@ class User extends Authenticatable
             'is_active'         => 'boolean',
             'is_temp_password'  => 'boolean',
         ];
+    }
+
+    public function applicantProfile()
+    {
+        return $this->hasOne(ApplicantProfile::class);
     }
 }

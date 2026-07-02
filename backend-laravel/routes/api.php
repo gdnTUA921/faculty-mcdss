@@ -1,14 +1,20 @@
 <?php
 
-use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Admin\StaffAccountController;
+use App\Http\Controllers\Api\ApplicantProfileController;
 use App\Http\Controllers\Api\CriterionOptionController;
 use App\Http\Controllers\Api\PositionController;
 use App\Http\Controllers\Api\PositionCriterionController;
 use App\Http\Controllers\Api\PositionStatusController;
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\Auth\RegisterController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public ────────────────────────────────────────────────────────────────────
 Route::post('/auth/login', [AuthController::class, 'login']);
+Route::post('/register', RegisterController::class);
+Route::post('/email/verify/{token}', EmailVerificationController::class);
 
 // ── Authenticated (any role) ──────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
@@ -34,6 +40,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('criteria/{criterion}/options', [CriterionOptionController::class, 'store']);
     Route::put('criterion-options/{criterionOption}', [CriterionOptionController::class, 'update']);
     Route::delete('criterion-options/{criterionOption}', [CriterionOptionController::class, 'destroy']);
+
+    // Phase 3: Admin creates staff accounts
+    Route::post('/admin/staff-accounts', StaffAccountController::class);
 });
 
 // ── Director only ─────────────────────────────────────────────────────────────
@@ -41,12 +50,8 @@ Route::middleware(['auth:sanctum', 'role:director'])->prefix('director')->group(
     // Phase 2+ routes go here
 });
 
-// ── Internal applicant ────────────────────────────────────────────────────────
-Route::middleware(['auth:sanctum', 'role:internal_applicant'])->prefix('internal')->group(function () {
-    // Phase 3+ routes go here
-});
-
-// ── External applicant ────────────────────────────────────────────────────────
-Route::middleware(['auth:sanctum', 'role:external_applicant'])->prefix('external')->group(function () {
-    // Phase 3+ routes go here
+// ── Applicant profile (internal & external) ───────────────────────────────────
+Route::middleware(['auth:sanctum', 'role:internal_applicant,external_applicant'])->group(function () {
+    Route::get('/applicant/profile', [ApplicantProfileController::class, 'show']);
+    Route::put('/applicant/profile', [ApplicantProfileController::class, 'update']);
 });

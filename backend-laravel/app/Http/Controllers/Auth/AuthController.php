@@ -25,11 +25,17 @@ class AuthController extends Controller
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
+
+        if (! $user->is_active) {
+            return response()->json(['message' => 'Account is deactivated.'], 403);
+        }
+
         $token = $user->createToken('api-token', [$user->role])->plainTextToken;
 
         return response()->json([
-            'token' => $token,
-            'user'  => [
+            'token'             => $token,
+            'has_temp_password' => $user->is_temp_password,
+            'user'              => [
                 'id'         => $user->id,
                 'first_name' => $user->first_name,
                 'last_name'  => $user->last_name,
@@ -67,7 +73,8 @@ class AuthController extends Controller
         ]);
 
         $request->user()->update([
-            'password' => $request->password,
+            'password'         => $request->password,
+            'is_temp_password' => false,
         ]);
 
         // Revoke all tokens so other sessions are invalidated

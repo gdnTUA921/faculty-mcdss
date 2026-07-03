@@ -23,6 +23,11 @@ if [ ! -d "/var/www/vendor" ]; then
     cd /var/www && composer install --no-interaction --prefer-dist --optimize-autoloader
 fi
 
+# Ensure Laravel has an environment file inside the mounted project directory.
+if [ ! -f "/var/www/.env" ] && [ -f "/var/www/.env.example" ]; then
+    cp /var/www/.env.example /var/www/.env
+fi
+
 # Generate APP_KEY if not already set in the environment
 if [ -z "$APP_KEY" ]; then
     echo "Generating application key..."

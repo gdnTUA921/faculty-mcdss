@@ -1,7 +1,9 @@
+import io
 from pathlib import Path
 import sys
 
 from fastapi.testclient import TestClient
+from docx import Document
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -147,3 +149,109 @@ def test_ranking_preview_orders_applicants_by_score():
             {"rank": 3, "applicant_id": 301, "score": 88.5},
         ],
     }
+
+
+def build_docx_bytes(lines):
+    document = Document()
+    for line in lines:
+        document.add_paragraph(line)
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_parse_resume_rejects_missing_service_key():
+    response = client.post(
+        "/parse-resume",
+        files={"file": ("resume.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid service key"}
+
+
+def test_parse_resume_extracts_structured_data_from_docx():
+    resume_bytes = build_docx_bytes(
+        [
+            "Jane Marie Doe",
+            "jane.doe@example.com",
+            "+1 (555) 123-4567",
+            "",
+            "Education",
+            "- B.S. Computer Science, University of Example, 2022",
+            "",
+            "Work Experience",
+            "- Software Engineer at Example Labs, Jan 2021 - Present",
+            "",
+            "Certifications",
+            "- AWS Certified Solutions Architect",
+            "",
+            "Publications",
+            "- Doe, J. (2024). Resume Parsing with Rules. Journal of Examples.",
+        ]
+    )
+
+    response = client.post(
+        "/parse-resume",
+        headers={"X-Service-Key": "changeme"},
+        files={
+            "file": (
+                "resume.docx",
+                resume_bytes,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "Jane Marie Doe",
+        "email": "jane.doe@example.com",
+        "phone": "+1 (555) 123-4567",
+        "education": [
+            {
+                "raw_text": "B.S. Computer Science, University of Example, 2022",
+            }
+        ],
+        "work_experience": [
+            {
+                "raw_text": "Software Engineer at Example Labs, Jan 2021 - Present",
+            }
+        ],
+        "certifications": [
+            {
+                "raw_text": "AWS Certified Solutions Architect",
+            }
+        ],
+        "publications": [
+            {
+                "raw_text": "Doe, J. (2024). Resume Parsing with Rules. Journal of Examples.",
+            }
+        ],
+    }
+
+
+def test_parse_resume_accepts_pdf_upload(monkeypatch):
+    monkeypatch.setattr(
+        "main.extract_text_from_pdf",
+        lambda file_bytes: (
+            "John Q. Public\n"
+            "john.public@example.com\n"
+            "(555) 222-3333\n\n"
+            "Education\n"
+            "- Master of Science in Data Science, University of Sample, 2023"
+        ),
+    )
+
+    response = client.post(
+        "/parse-resume",
+        headers={"X-Service-Key": "changeme"},
+        files={"file": ("resume.pdf", b"%PDF-1.4\nfake", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "john.public@example.com"
+    assert response.json()["education"] == [
+        {"raw_text": "Master of Science in Data Science, University of Sample, 2023"}
+    ]

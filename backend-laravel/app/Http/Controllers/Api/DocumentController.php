@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreDocumentRequest;
 use App\Models\Application;
 use App\Models\Document;
+use App\Services\ResumeParserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -13,6 +14,10 @@ use Illuminate\Support\Str;
 
 class DocumentController extends Controller
 {
+    public function __construct(private readonly ResumeParserService $resumeParser)
+    {
+    }
+
     public function store(StoreDocumentRequest $request): JsonResponse
     {
         $applicantProfile = $request->user()->applicantProfile;
@@ -32,6 +37,7 @@ class DocumentController extends Controller
         }
 
         $file = $request->file('file');
+        $fileContents = $file->get();
         $storedName = Str::uuid().'_'.$file->getClientOriginalName();
         $path = $file->storeAs("documents/{$applicantProfile->id}", $storedName, 'local');
 
@@ -45,6 +51,18 @@ class DocumentController extends Controller
             'file_size_bytes' => $file->getSize(),
             'uploaded_by' => $request->user()->id,
         ]);
+
+        if (strtolower($validated['document_type']) === 'resume') {
+            $parsedResumeData = $this->resumeParser->parse(
+                $fileContents,
+                $file->getClientOriginalName(),
+                $file->getClientMimeType()
+            );
+
+            if ($parsedResumeData !== null) {
+                $applicantProfile->update(['parsed_resume_data' => $parsedResumeData]);
+            }
+        }
 
         return response()->json($document, 201);
     }

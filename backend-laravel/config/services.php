@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'fastapi' => [
+        'url' => env('FASTAPI_URL', 'http://fastapi:8001'),
+        'secret_key' => env('FASTAPI_SECRET_KEY', 'changeme'),
+    ],
+
 ];

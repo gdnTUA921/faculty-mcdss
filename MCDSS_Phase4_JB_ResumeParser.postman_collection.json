@@ -1,0 +1,478 @@
+{
+  "info": {
+    "name": "MCDSS - Phase 4 (JB's Part: Resume Parser + Laravel Integration)",
+    "description": "Verifies Person 4's (JB's) Phase 4 slice from TEAM_DEVELOPMENT_PLAN.md: the FastAPI `POST /parse-resume` endpoint, its guard rails, and the Laravel-side integration that calls it from `POST /api/documents` (document_type=resume) and writes the result to `applicant_profiles.parsed_resume_data`.\n\nPrereqs:\n1. `docker compose up -d --build` (the fastapi image must be rebuilt at least once after JB's branch was merged -- his merge added `pypdf`/`python-docx` to `requirements.txt`, and a plain `restart` will NOT pick up new pip packages, only `--build` will).\n2. `docker compose exec laravel php artisan migrate --seed`.\n3. Manual file attachments required in several requests below (Postman collections can't embed binary bodies). Real fixture files are already generated for you in `postman_fixtures/` at the project root -- just attach them, no need to create your own:\n   - `postman_fixtures/sample_resume.docx` -- real, extractable resume content\n   - `postman_fixtures/sample_resume.pdf` -- same content as a real PDF\n   - `postman_fixtures/disallowed_file.txt` -- plain text, wrong type\n   - `postman_fixtures/empty_resume.pdf` -- zero-byte file with a .pdf name\n   - `postman_fixtures/unsupported_type.png` -- valid 1x1 PNG (Laravel allows png as a document, but FastAPI's parser doesn't support it -- tests graceful degradation)\n\nBoth fixture resumes contain: name 'Jordan A. Rivera', email 'jordan.rivera@example.com', phone '+1 (555) 314-1592', an Education section, a Work Experience section, a Certifications section, and a Publications section.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "fastapi_url", "value": "http://localhost:8001" },
+    { "key": "fastapi_secret_key", "value": "changeme" },
+    { "key": "applicant_email", "value": "" },
+    { "key": "applicant_token", "value": "" },
+    { "key": "document_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. FastAPI Health & Service-Key Guard Rails",
+      "item": [
+        {
+          "name": "Public Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fastapi_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Body is {status: ok}', () => pm.expect(pm.response.json()).to.eql({ status: 'ok' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Internal Ping Rejects Missing Service Key",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fastapi_url}}/internal/ping"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Internal Ping Accepts Correct Service Key",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Service-Key", "value": "{{fastapi_secret_key}}" }
+            ],
+            "url": "{{fastapi_url}}/internal/ping"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Resume Parser - Direct FastAPI Tests (Person 4)",
+      "item": [
+        {
+          "name": "[Guard Rail] Parse Resume Rejects Missing Service Key (ATTACH sample_resume.pdf)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{fastapi_url}}/parse-resume",
+            "description": "MANUAL STEP: attach postman_fixtures/sample_resume.pdf. No X-Service-Key header is sent -- expect rejection before parsing even runs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 (missing service key)', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Disallowed File Type Rejected (ATTACH disallowed_file.txt)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Service-Key", "value": "{{fastapi_secret_key}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{fastapi_url}}/parse-resume",
+            "description": "MANUAL STEP: attach postman_fixtures/disallowed_file.txt."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 (not PDF/DOCX)', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Empty File Rejected (ATTACH empty_resume.pdf)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Service-Key", "value": "{{fastapi_secret_key}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{fastapi_url}}/parse-resume",
+            "description": "MANUAL STEP: attach postman_fixtures/empty_resume.pdf (zero bytes, valid .pdf extension)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 (empty file)', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Parse Real DOCX Resume (ATTACH sample_resume.docx)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Service-Key", "value": "{{fastapi_secret_key}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{fastapi_url}}/parse-resume",
+            "description": "MANUAL STEP: attach postman_fixtures/sample_resume.docx."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Name extracted', () => pm.expect(json.name).to.eql('Jordan A. Rivera'));",
+                  "pm.test('Email extracted', () => pm.expect(json.email).to.eql('jordan.rivera@example.com'));",
+                  "pm.test('Phone extracted', () => pm.expect(json.phone).to.not.be.null);",
+                  "pm.test('Education section has content', () => pm.expect(json.education.length).to.be.above(0));",
+                  "pm.test('Work experience section has content', () => pm.expect(json.work_experience.length).to.be.above(0));",
+                  "pm.test('Certifications section has content', () => pm.expect(json.certifications.length).to.be.above(0));",
+                  "pm.test('Publications section has content', () => pm.expect(json.publications.length).to.be.above(0));",
+                  "const educationText = json.education.map(e => e.raw_text).join(' ');",
+                  "pm.test('Education mentions Data Science', () => pm.expect(educationText).to.include('Data Science'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Parse Real PDF Resume (ATTACH sample_resume.pdf)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Service-Key", "value": "{{fastapi_secret_key}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": "{{fastapi_url}}/parse-resume",
+            "description": "MANUAL STEP: attach postman_fixtures/sample_resume.pdf (same content as the DOCX fixture, extracted through the pypdf path instead)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Name extracted', () => pm.expect(json.name).to.eql('Jordan A. Rivera'));",
+                  "pm.test('Email extracted', () => pm.expect(json.email).to.eql('jordan.rivera@example.com'));",
+                  "pm.test('Work experience section has content', () => pm.expect(json.work_experience.length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Laravel Integration (Resume Upload -> parsed_resume_data)",
+      "item": [
+        {
+          "name": "Register External Applicant",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_email', `jb.verify.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('applicant_token', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"JB\",\n  \"last_name\": \"Verify\",\n  \"email\": \"{{applicant_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/register"
+          }
+        },
+        {
+          "name": "Get Applicant Profile (baseline, parsed_resume_data should be null)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "url": "{{base_url}}/api/applicant/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('parsed_resume_data starts null', () => pm.expect(pm.response.json().parsed_resume_data).to.be.null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Resume Document (ATTACH sample_resume.docx)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "document_type", "value": "resume", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/api/documents",
+            "description": "MANUAL STEP: attach postman_fixtures/sample_resume.docx. document_type MUST be exactly 'resume' -- that's what triggers DocumentController to call FastAPI's /parse-resume and write parsed_resume_data on the profile."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('document_type is resume', () => pm.expect(json.document_type).to.eql('resume'));",
+                  "pm.collectionVariables.set('document_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Applicant Profile (parsed_resume_data should now be populated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "url": "{{base_url}}/api/applicant/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().parsed_resume_data;",
+                  "pm.test('parsed_resume_data is populated', () => pm.expect(data).to.not.be.null);",
+                  "pm.test('Name matches uploaded resume', () => pm.expect(data.name).to.eql('Jordan A. Rivera'));",
+                  "pm.test('Email matches uploaded resume', () => pm.expect(data.email).to.eql('jordan.rivera@example.com'));",
+                  "pm.test('Education carried through', () => pm.expect(data.education.length).to.be.above(0));",
+                  "pm.test('Work experience carried through', () => pm.expect(data.work_experience.length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Regression] Non-Resume Upload Still Works, Untouched by Parser (ATTACH sample_resume.docx)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "document_type", "value": "transcript", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/api/documents",
+            "description": "MANUAL STEP: attach any real file, e.g. postman_fixtures/sample_resume.docx again. Using document_type='transcript' should skip the FastAPI call entirely and just succeed fast, proving the resume-parse trigger didn't leak into other document types."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('document_type is transcript', () => pm.expect(pm.response.json().document_type).to.eql('transcript'));",
+                  "pm.test('Response time is fast (no FastAPI round-trip)', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Resume Upload With Disallowed File Type Rejected by Laravel (ATTACH disallowed_file.txt)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "document_type", "value": "resume", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/api/documents",
+            "description": "MANUAL STEP: attach postman_fixtures/disallowed_file.txt. Laravel's own mimes: validation (DOCUMENT_ALLOWED_MIMES) should reject this before it ever reaches FastAPI."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 (Laravel mime validation)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Edge Case] Resume Upload With Unsupported-by-Parser Type Degrades Gracefully (ATTACH unsupported_type.png)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_email', `jb.verify.png.${Date.now()}@example.com`);",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get('base_url') + '/api/register',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json' },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ first_name: 'JB', last_name: 'PngEdge', email: pm.collectionVariables.get('applicant_email'), password: 'password123', password_confirmation: 'password123' }) }",
+                  "}, (err, res) => {",
+                  "    if (!err && res) pm.collectionVariables.set('applicant_token', res.json().token);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 (Laravel allows png as a document type)', () => pm.response.to.have.status(201));",
+                  "const baseUrl = pm.collectionVariables.get('base_url');",
+                  "const token = pm.collectionVariables.get('applicant_token');",
+                  "pm.sendRequest({",
+                  "    url: baseUrl + '/api/applicant/profile',",
+                  "    method: 'GET',",
+                  "    header: { Authorization: 'Bearer ' + token }",
+                  "}, (err, res) => {",
+                  "    pm.test('parsed_resume_data stays null (FastAPI rejected the png, failure was swallowed)', () => {",
+                  "        pm.expect(res.json().parsed_resume_data).to.be.null;",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "document_type", "value": "resume", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/api/documents",
+            "description": "MANUAL STEP: attach postman_fixtures/unsupported_type.png. This uses a fresh applicant (registered in the prerequest script) so parsed_resume_data starts null. Laravel accepts png as a valid document mime, but FastAPI's /parse-resume only supports PDF/DOCX and will reject it with 400 -- ResumeParserService catches that failure, logs a warning, and leaves the upload (and parsed_resume_data) unaffected instead of blowing up the request."
+          }
+        }
+      ]
+    }
+  ]
+}

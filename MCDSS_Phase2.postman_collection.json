@@ -1,0 +1,713 @@
+{
+  "info": {
+    "name": "MCDSS - Phase 2 (Position Configuration)",
+    "description": "Exercises every Phase 2 deliverable from TEAM_DEVELOPMENT_PLAN.md: positions CRUD, open/close/fill status transitions, criteria CRUD (including the weight-sum-to-1.0 constraint), and criterion_options CRUD (select-type only). This collection was written after fixing several bugs found by reading the controller/request code directly:\n- StorePositionRequest was missing department_id (NOT NULL in DB) and validated the wrong enum values for target_applicant_type/status.\n- StoreCriterionRequest/UpdateCriterionRequest validated a field called 'type' that doesn't exist -- the column and model fillable are 'data_type' -- so criteria always silently defaulted to data_type=numeric regardless of what was sent.\n- CriterionOptionController's index/store/update/destroy type-hinted a Position (and, for update/destroy, a Criterion) that the registered routes never supply in the URL, so every request 404'd unconditionally.\n- StoreCriterionOptionRequest/UpdateCriterionOptionRequest never validated 'value', which is NOT NULL in the DB.\nThese tests specifically probe those exact spots so a regression shows up immediately.\n\nPrereqs: `docker compose up -d --build` then `docker compose exec laravel php artisan migrate --seed`.\n\nONE MANUAL STEP: there is no /api/departments endpoint (not a Phase 2 deliverable), so you must fetch a real department_id once and put it in the 'department_id' collection variable before running. Run:\n  docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"\nand paste the output into the department_id collection variable.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "admin_token", "value": "" },
+    { "key": "director_token", "value": "" },
+    { "key": "department_id", "value": "" },
+    { "key": "position_id", "value": "" },
+    { "key": "criterion_numeric_id", "value": "" },
+    { "key": "criterion_select_id", "value": "" },
+    { "key": "option_a_id", "value": "" },
+    { "key": "option_b_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "Login as Seeded Admin",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('admin_token', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Seeded Director (for guard-rail tests)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"director@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('director_token', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check department_id is set (manual prereq)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "No /api/departments endpoint exists, so department_id can't be fetched via the API. Run this once:\n  docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"\nand paste the UUID into the 'department_id' collection variable before running the rest of this folder."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + pm.collectionVariables.get('admin_token') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const deptId = pm.collectionVariables.get('department_id');",
+                  "pm.test('department_id collection variable is set (see request description for how to fetch one)', () => pm.expect(deptId).to.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Position CRUD",
+      "item": [
+        {
+          "name": "Create Position",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Assistant Professor - Computer Science\",\n  \"description\": \"Full-time faculty position.\",\n  \"target_applicant_type\": \"both\",\n  \"slots_available\": 2\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions",
+            "description": "Regression check: previously always failed (department_id wasn't validated/inserted, and even fixing that alone would still fail because target_applicant_type accepted the wrong enum values)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('target_applicant_type stored as both', () => pm.expect(json.target_applicant_type).to.eql('both'));",
+                  "pm.test('status defaults to open', () => pm.expect(json.status).to.eql('open'));",
+                  "pm.test('criteria_count starts at 0', () => pm.expect(json.criteria_count).to.eql(0));",
+                  "pm.collectionVariables.set('position_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Positions",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/positions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const created = json.find(p => p.id === pm.collectionVariables.get('position_id'));",
+                  "pm.test('Created position appears in list', () => pm.expect(created).to.not.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Position By Id",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('department relation is loaded', () => pm.expect(pm.response.json().department).to.not.be.null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Position",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slots_available\": 3\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('slots_available updated', () => pm.expect(pm.response.json().slots_available).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Cannot Open Position With No Criteria",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"open\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/status",
+            "description": "Position already defaults to status=open with zero criteria on creation, so this just re-asserts 'open' -- with a weight sum of 0, the weights-must-equal-1.0 check should reject it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 (weights must total 1.0)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Criteria CRUD",
+      "item": [
+        {
+          "name": "Create Numeric Criterion (weight 0.5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Years of Experience\",\n  \"data_type\": \"numeric\",\n  \"weight\": 0.5,\n  \"min_value\": 0,\n  \"max_value\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "description": "Regression check: previously the 'data_type' field was validated as 'type' and silently dropped by mass assignment, so every criterion was forced to data_type=numeric no matter what was sent. This assertion would have passed by accident for a numeric criterion -- the select-type criterion below is the real test."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json().data;",
+                  "pm.test('data_type is numeric', () => pm.expect(json.data_type).to.eql('numeric'));",
+                  "pm.collectionVariables.set('criterion_numeric_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Select Criterion (weight 0.5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Education Level\",\n  \"data_type\": \"select\",\n  \"weight\": 0.5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "description": "This is the real regression check for the data_type bug: before the fix, this would have silently come back as data_type=numeric instead of select."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json().data;",
+                  "pm.test('data_type is select (regression check)', () => pm.expect(json.data_type).to.eql('select'));",
+                  "pm.collectionVariables.set('criterion_select_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Third Criterion Rejected (weights would exceed 1.0)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra Criterion\",\n  \"data_type\": \"numeric\",\n  \"weight\": 0.3\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "description": "0.5 + 0.5 + 0.3 = 1.3, which exceeds 1.0 -- should be rejected."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 (weight would exceed 1.0)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Criteria for Position",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Exactly 2 criteria exist', () => pm.expect(pm.response.json().length).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Criterion (rename)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Relevant Years of Experience\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_numeric_id}}",
+            "description": "Regression check: this route is flat (/api/criteria/{id}, no position segment in the URL), and the controller used to require a Position argument it could never receive, so this always 404'd."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (regression check -- used to always 404)', () => pm.response.to.have.status(200));",
+                  "pm.test('name updated', () => pm.expect(pm.response.json().data.name).to.eql('Relevant Years of Experience'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Criterion Options CRUD (select-type only)",
+      "item": [
+        {
+          "name": "Create Option A on Select Criterion",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Bachelor's Degree\",\n  \"value\": \"bachelors\",\n  \"score_value\": 0.5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_select_id}}/options",
+            "description": "Regression check: the controller used to require a Position argument that this route (/api/criteria/{id}/options) never supplies, so this always 404'd regardless of IDs used."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 (regression check -- used to always 404)', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('value field persisted', () => pm.expect(json.value).to.eql('bachelors'));",
+                  "pm.collectionVariables.set('option_a_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Option B on Select Criterion",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Master's Degree\",\n  \"value\": \"masters\",\n  \"score_value\": 1.0\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_select_id}}/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('option_b_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Cannot Add Options to a Numeric Criterion",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Invalid\",\n  \"value\": \"invalid\",\n  \"score_value\": 0.5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_numeric_id}}/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 (options only allowed on select-type criteria)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Options for Select Criterion",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/criteria/{{criterion_select_id}}/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (regression check -- used to always 404)', () => pm.response.to.have.status(200));",
+                  "pm.test('Exactly 2 options exist', () => pm.expect(pm.response.json().length).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Option A",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score_value\": 0.6\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criterion-options/{{option_a_id}}",
+            "description": "Regression check: this route (/api/criterion-options/{id}) is flat -- no position or criterion segment -- but the controller used to require both, so this always 404'd."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (regression check -- used to always 404)', () => pm.response.to.have.status(200));",
+                  "pm.test('score_value updated', () => pm.expect(parseFloat(pm.response.json().score_value)).to.be.closeTo(0.6, 0.0001));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Option B",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/criterion-options/{{option_b_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (regression check -- used to always 404)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Open Position + Cleanup",
+      "item": [
+        {
+          "name": "Open Position (weights now sum to exactly 1.0)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"open\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Position status is open', () => pm.expect(pm.response.json().data.status).to.eql('open'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Numeric Criterion",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/criteria/{{criterion_numeric_id}}",
+            "description": "Regression check: DELETE /api/criteria/{id} is a flat route, but the controller used to require a Position argument it could never receive, so this always 404'd."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (regression check -- used to always 404)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Guard Rails (Negative Tests)",
+      "item": [
+        {
+          "name": "Non-Admin (Director) Cannot Create Position",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{director_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Should Not Be Created\",\n  \"target_applicant_type\": \"both\",\n  \"slots_available\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Position Without department_id Rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Missing Department\",\n  \"target_applicant_type\": \"both\",\n  \"slots_available\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions",
+            "description": "Regression check: department_id is NOT NULL in the DB but used to be entirely absent from validation, so this used to blow up as an unhandled 500 DB integrity error instead of a clean 422."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 (regression check -- used to be an unhandled 500)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid target_applicant_type Value Rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Bad Enum Value\",\n  \"target_applicant_type\": \"external_applicant\",\n  \"slots_available\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions",
+            "description": "Regression check: 'external_applicant' used to be the only value validation accepted, but it doesn't match the Postgres enum (external/internal/both), so it used to crash as a 500 DB error instead of a clean 422."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 (regression check -- used to be an unhandled 500)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Zero-Weight Criterion Rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Zero Weight\",\n  \"data_type\": \"numeric\",\n  \"weight\": 0\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "description": "DB CHECK constraint requires weight > 0 (strictly), but validation used to allow weight=0. Confirms the gt:0 fix."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 (weight must be greater than 0)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

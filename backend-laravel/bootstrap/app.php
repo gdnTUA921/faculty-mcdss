@@ -17,6 +17,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => RoleMiddleware::class,
         ]);
+
+        // This is an API-only app — there is no 'login' route to redirect
+        // guests to, so unauthenticated requests must always fall through
+        // to a JSON 401 instead of crashing on route('login').
+        $middleware->redirectGuestsTo(fn () => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

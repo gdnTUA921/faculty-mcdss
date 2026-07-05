@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Position extends Model
 {
-    use HasFactory;
+    use HasFactory, HasUuids;
 
 
     public $incrementing = false;
@@ -56,6 +57,11 @@ class Position extends Model
     public function criteria(): HasMany
     {
         return $this->hasMany(Criterion::class)->orderBy('display_order')->orderBy('created_at');
+    }
+
+    public function applications(): HasMany
+    {
+        return $this->hasMany(Application::class);
     }
 
 }

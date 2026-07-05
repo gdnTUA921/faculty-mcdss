@@ -15,11 +15,12 @@ class StorePositionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title' => ['required', 'string', 'max:150'],
+            'department_id' => ['required', 'uuid', 'exists:departments,id'],
+            'title' => ['required', 'string', 'max:200'],
             'description' => ['nullable', 'string'],
-            'target_applicant_type' => ['required', 'in:external_applicant,internal_applicant,both'],
+            'target_applicant_type' => ['required', 'in:external,internal,both'],
             'slots_available' => ['required', 'integer', 'min:1'],
-            'status' => ['sometimes', 'in:draft,open,closed,filled'],
+            'status' => ['sometimes', 'in:open,closed,filled'],
         ];
     }
 

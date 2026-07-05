@@ -45,9 +45,9 @@ class PositionCriterionController extends Controller
     }
 
 
-    public function update(UpdateCriterionRequest $request, Position $position, Criterion $criterion): JsonResponse
+    public function update(UpdateCriterionRequest $request, Criterion $criterion): JsonResponse
     {
-           $validated = $request->validated();
+        $validated = $request->validated();
 
         if (array_key_exists('weight', $validated)) {
             $this->ensureWeightDoesNotExceedOne(
@@ -66,11 +66,8 @@ class PositionCriterionController extends Controller
     }
 
 
-    public function destroy(Position $position, Criterion $criterion): JsonResponse
+    public function destroy(Criterion $criterion): JsonResponse
     {
-        $this->assertBelongsToPosition($position, $criterion);
-
-
         $criterion->delete();
 
 
@@ -86,20 +83,7 @@ class PositionCriterionController extends Controller
     }
 
 
-    private function ensureWeightAllowsSave(Position $position, ?Criterion $criterion, float $newWeight): void
-    {
-        $existingWeight = $criterion ? (float) $criterion->weight : 0.0;
-        $currentTotal = (float) $position->criteria()->sum('weight') - $existingWeight;
-        $newTotal = $currentTotal + $newWeight;
-
-
-        if ($newTotal > 1.0 + 0.0001) {
-            throw ValidationException::withMessages([
-                'weight' => ['The total criteria weight for this position cannot exceed 1.0.'],
-            ]);
-        }
-    }
-        private function ensureWeightDoesNotExceedOne(Position $position, float $incomingWeight, ?Criterion $ignoreCriterion = null): void
+    private function ensureWeightDoesNotExceedOne(Position $position, float $incomingWeight, ?Criterion $ignoreCriterion = null): void
     {
         $currentWeightSum = $position->criteria()
             ->when($ignoreCriterion, fn ($query) => $query->where('id', '!=', $ignoreCriterion->id))
@@ -110,17 +94,6 @@ class PositionCriterionController extends Controller
         if ($newTotal > 1.0) {
             throw ValidationException::withMessages([
                 'weight' => ['The total weight for this position cannot exceed 1.0.'],
-            ]);
-        }
-    }
-
-    private function ensureWeightEqualsOne(Position $position): void
-    {
-        $totalWeight = (float) $position->criteria()->sum('weight');
-
-        if (abs($totalWeight - 1.0) > 0.0001) {
-            throw ValidationException::withMessages([
-                'status' => ['You can only open this position when all criterion weights total 1.0.'],
             ]);
         }
     }

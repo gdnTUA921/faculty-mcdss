@@ -15,9 +15,9 @@ class UpdateCriterionOptionRequest extends FormRequest
     {
         return [
             'label' => ['sometimes', 'required', 'string', 'max:150'],
-            'score_value' => ['sometimes', 'required', 'numeric'],
+            'value' => ['sometimes', 'required', 'string', 'max:150'],
+            'score_value' => ['sometimes', 'required', 'numeric', 'min:0', 'max:1'],
             'display_order' => ['sometimes', 'integer', 'min:0'],
-            'is_active' => ['sometimes', 'boolean'],
         ];
     }
 }

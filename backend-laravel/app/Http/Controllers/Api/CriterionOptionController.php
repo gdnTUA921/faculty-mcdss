@@ -9,24 +9,19 @@ use App\Http\Requests\StoreCriterionOptionRequest;
 use App\Http\Requests\UpdateCriterionOptionRequest;
 use App\Models\Criterion;
 use App\Models\CriterionOption;
-use App\Models\Position;
 use Illuminate\Http\JsonResponse;
 
 
 class CriterionOptionController extends Controller
 {
-    public function index(Position $position, Criterion $criterion): JsonResponse
+    public function index(Criterion $criterion): JsonResponse
     {
-        $this->assertBelongsToPosition($position, $criterion);
-
-
         return response()->json($criterion->options()->get());
     }
 
 
-    public function store(StoreCriterionOptionRequest $request, Position $position, Criterion $criterion): JsonResponse
+    public function store(StoreCriterionOptionRequest $request, Criterion $criterion): JsonResponse
     {
-        $this->assertBelongsToPosition($position, $criterion);
         $this->assertSelectableCriterion($criterion);
 
 
@@ -37,21 +32,15 @@ class CriterionOptionController extends Controller
     }
 
 
-    public function show(Position $position, Criterion $criterion, CriterionOption $criterionOption): JsonResponse
+    public function show(CriterionOption $criterionOption): JsonResponse
     {
-        $this->assertBelongsToPosition($position, $criterion);
-        $this->assertBelongsToCriterion($criterion, $criterionOption);
-
-
         return response()->json($criterionOption);
     }
 
 
-    public function update(UpdateCriterionOptionRequest $request, Position $position, Criterion $criterion, CriterionOption $criterionOption): JsonResponse
+    public function update(UpdateCriterionOptionRequest $request, CriterionOption $criterionOption): JsonResponse
     {
-        $this->assertBelongsToPosition($position, $criterion);
-        $this->assertBelongsToCriterion($criterion, $criterionOption);
-        $this->assertSelectableCriterion($criterion);
+        $this->assertSelectableCriterion($criterionOption->criterion);
 
 
         $criterionOption->fill($request->validated());
@@ -62,32 +51,12 @@ class CriterionOptionController extends Controller
     }
 
 
-    public function destroy(Position $position, Criterion $criterion, CriterionOption $criterionOption): JsonResponse
+    public function destroy(CriterionOption $criterionOption): JsonResponse
     {
-        $this->assertBelongsToPosition($position, $criterion);
-        $this->assertBelongsToCriterion($criterion, $criterionOption);
-
-
         $criterionOption->delete();
 
 
         return response()->json(['message' => 'Criterion option deleted.']);
-    }
-
-
-    private function assertBelongsToPosition(Position $position, Criterion $criterion): void
-    {
-        if ($criterion->position_id !== $position->id) {
-            abort(404);
-        }
-    }
-
-
-    private function assertBelongsToCriterion(Criterion $criterion, CriterionOption $criterionOption): void
-    {
-        if ($criterionOption->criterion_id !== $criterion->id) {
-            abort(404);
-        }
     }
 
 

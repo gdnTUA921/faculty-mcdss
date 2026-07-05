@@ -15,9 +15,9 @@ class StoreCriterionOptionRequest extends FormRequest
     {
         return [
             'label' => ['required', 'string', 'max:150'],
-            'score_value' => ['required', 'numeric'],
+            'value' => ['required', 'string', 'max:150'],
+            'score_value' => ['required', 'numeric', 'min:0', 'max:1'],
             'display_order' => ['sometimes', 'integer', 'min:0'],
-            'is_active' => ['sometimes', 'boolean'],
         ];
     }
 }

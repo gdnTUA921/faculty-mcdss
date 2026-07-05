@@ -1,0 +1,495 @@
+{
+  "info": {
+    "name": "MCDSS - Phase 3 (Accounts & Registration)",
+    "description": "Exercises every Phase 3 deliverable from TEAM_DEVELOPMENT_PLAN.md against a running `docker compose up -d` stack: external registration, email verification, applicant profile completion, admin-created staff accounts with temp passwords, forced-reset behavior, and password change. Mailpit's REST API (http://localhost:8025/api/v1) is used to auto-fetch verification tokens and temp passwords, so the whole collection can be run end-to-end via Collection Runner with no manual copy/paste.\n\nPrereqs: `docker compose up -d --build` then `docker compose exec laravel php artisan migrate --seed`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "mailpit_url", "value": "http://localhost:8025" },
+    { "key": "admin_token", "value": "" },
+    { "key": "external_email", "value": "" },
+    { "key": "external_token", "value": "" },
+    { "key": "external_user_id", "value": "" },
+    { "key": "verification_token", "value": "" },
+    { "key": "profile_completed_at_first", "value": "" },
+    { "key": "staff_email", "value": "" },
+    { "key": "staff_temp_password", "value": "" },
+    { "key": "staff_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "Login as Seeded Admin",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login",
+            "description": "Uses the seeded admin from UserSeeder.php. Requires `php artisan migrate --seed` to have been run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Response has a token', () => pm.expect(json.token).to.be.a('string'));",
+                  "pm.collectionVariables.set('admin_token', json.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. External Applicant Flow",
+      "item": [
+        {
+          "name": "Register External Applicant",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('external_email', `jane.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is external_applicant', () => pm.expect(json.user.role).to.eql('external_applicant'));",
+                  "pm.collectionVariables.set('external_token', json.token);",
+                  "pm.collectionVariables.set('external_user_id', json.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Jane\",\n  \"last_name\": \"Doe\",\n  \"email\": \"{{external_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/register",
+            "description": "Expect this to also auto-create an applicant_profiles row with applicant_type=external (verified indirectly by the profile GET below)."
+          }
+        },
+        {
+          "name": "Fetch Verification Token (via Mailpit API)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25",
+            "description": "Reads Mailpit's inbox and finds the 'Verify Your Email Address' email sent to external_email, then fetches its full body and regex-extracts the token out of the <strong> tag so the next request can use it automatically."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('external_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email));",
+                  "pm.test('Verification email found for ' + email, () => pm.expect(match).to.not.be.undefined);",
+                  "if (match) {",
+                  "    pm.sendRequest({ url: pm.collectionVariables.get('mailpit_url') + '/api/v1/message/' + match.ID, method: 'GET' }, (err, res) => {",
+                  "        if (!err && res) {",
+                  "            const body = res.json();",
+                  "            const html = body.HTML || body.Text || '';",
+                  "            const tokenMatch = html.match(/<strong>([^<]+)<\\/strong>/);",
+                  "            if (tokenMatch) {",
+                  "                pm.collectionVariables.set('verification_token', tokenMatch[1].trim());",
+                  "            }",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/email/verify/{{verification_token}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Confirms verification', () => pm.expect(pm.response.json().message).to.include('verified'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Applicant Profile (Jane, before completion)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{external_token}}" } ],
+            "url": "{{base_url}}/api/applicant/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (profile auto-created on registration)', () => pm.response.to.have.status(200));",
+                  "pm.test('applicant_type is external', () => pm.expect(pm.response.json().applicant_type).to.eql('external'));",
+                  "pm.test('profile_completed_at starts null', () => pm.expect(pm.response.json().profile_completed_at).to.be.null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Applicant Profile - First Save",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{external_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summary\": \"PhD candidate, ML focus\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applicant/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('profile_completed_at is now set', () => pm.expect(json.profile_completed_at).to.not.be.null);",
+                  "pm.collectionVariables.set('profile_completed_at_first', json.profile_completed_at);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Applicant Profile - Second Save (timestamp must not move)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{external_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summary\": \"Updated summary text\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applicant/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const first = pm.collectionVariables.get('profile_completed_at_first');",
+                  "pm.test('profile_completed_at unchanged on second save', () => pm.expect(json.profile_completed_at).to.eql(first));",
+                  "pm.test('summary field updated', () => pm.expect(json.summary).to.eql('Updated summary text'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Internal Staff Account Flow",
+      "item": [
+        {
+          "name": "Create Staff Account (as Admin)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('staff_email', `staff.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Role is internal_applicant', () => pm.expect(pm.response.json().user.role).to.eql('internal_applicant'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"New\",\n  \"last_name\": \"Staff\",\n  \"email\": \"{{staff_email}}\",\n  \"role\": \"internal_applicant\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/admin/staff-accounts"
+          }
+        },
+        {
+          "name": "Fetch Temp Password (via Mailpit API)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25",
+            "description": "Finds the 'Your Account Has Been Created' email sent to staff_email and extracts the temp password from the <strong> tag."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('staff_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email));",
+                  "pm.test('Account-created email found for ' + email, () => pm.expect(match).to.not.be.undefined);",
+                  "if (match) {",
+                  "    pm.sendRequest({ url: pm.collectionVariables.get('mailpit_url') + '/api/v1/message/' + match.ID, method: 'GET' }, (err, res) => {",
+                  "        if (!err && res) {",
+                  "            const body = res.json();",
+                  "            const html = body.HTML || body.Text || '';",
+                  "            const tokenMatch = html.match(/<strong>([^<]+)<\\/strong>/);",
+                  "            if (tokenMatch) {",
+                  "                pm.collectionVariables.set('staff_temp_password', tokenMatch[1].trim());",
+                  "            }",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as New Staff (Temp Password)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staff_email}}\",\n  \"password\": \"{{staff_temp_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('has_temp_password is true', () => pm.expect(json.has_temp_password).to.eql(true));",
+                  "pm.collectionVariables.set('staff_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Known Gap] Access Profile While Temp Password Still Active",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{staff_token}}" } ],
+            "url": "{{base_url}}/api/applicant/profile",
+            "description": "TEAM_DEVELOPMENT_PLAN.md Phase 3 calls for a 'forced password reset on first login' when is_temp_password=true. There is currently no server-side middleware blocking other authenticated routes while that flag is true -- only the login response's has_temp_password flag exists for the frontend to act on. This request is expected to return 200 today, which demonstrates the gap. If backend enforcement is added later, flip this assertion to expect 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Currently succeeds (200) -- documents missing forced-reset enforcement, see request description', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staff_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{staff_temp_password}}\",\n  \"password\": \"NewPassw0rd!\",\n  \"password_confirmation\": \"NewPassw0rd!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/change-password"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('staff_token', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Re-login with New Password",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staff_email}}\",\n  \"password\": \"NewPassw0rd!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('has_temp_password is now false', () => pm.expect(pm.response.json().has_temp_password).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Guard Rails (Negative Tests)",
+      "item": [
+        {
+          "name": "Non-Admin Cannot Create Staff Accounts",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{external_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Hack\",\n  \"last_name\": \"Attempt\",\n  \"email\": \"hacker@example.com\",\n  \"role\": \"admin\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/admin/staff-accounts"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate Email Registration Rejected",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Jane\",\n  \"last_name\": \"Doe\",\n  \"email\": \"{{external_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/register",
+            "description": "Re-uses external_email from folder 1, which is already registered."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 Validation Error', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid Login Credentials Rejected",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"wrong-password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 Validation Error', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

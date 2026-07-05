@@ -9,6 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
+        DB::statement('DROP TYPE IF EXISTS applicant_type CASCADE');
+
         DB::statement("CREATE TYPE applicant_type AS ENUM ('external', 'internal')");
 
         Schema::create('applicant_profiles', function (Blueprint $table) {

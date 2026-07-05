@@ -2,9 +2,13 @@
 
 use App\Http\Controllers\Admin\StaffAccountController;
 use App\Http\Controllers\Api\ApplicantProfileController;
+use App\Http\Controllers\Api\ApplicationController;
+use App\Http\Controllers\Api\ApplicationResponseController;
 use App\Http\Controllers\Api\CriterionOptionController;
+use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\PositionController;
 use App\Http\Controllers\Api\PositionCriterionController;
+use App\Http\Controllers\Api\PositionFormController;
 use App\Http\Controllers\Api\PositionStatusController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
@@ -54,4 +58,18 @@ Route::middleware(['auth:sanctum', 'role:director'])->prefix('director')->group(
 Route::middleware(['auth:sanctum', 'role:internal_applicant,external_applicant'])->group(function () {
     Route::get('/applicant/profile', [ApplicantProfileController::class, 'show']);
     Route::put('/applicant/profile', [ApplicantProfileController::class, 'update']);
+
+    // Phase 4: Form definition
+    Route::get('positions/{position}/form', [PositionFormController::class, 'show']);
+
+    // Phase 4: Application draft/submit lifecycle
+    Route::post('/applications', [ApplicationController::class, 'store']);
+    Route::put('/applications/{application}', [ApplicationController::class, 'update']);
+    Route::post('/applications/{application}/submit', [ApplicationController::class, 'submit']);
+    Route::get('/applications/{application}/responses', [ApplicationResponseController::class, 'index']);
+
+    // Phase 4: Document upload
+    Route::post('/documents', [DocumentController::class, 'store']);
+    Route::get('/documents', [DocumentController::class, 'index']);
+    Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
 });

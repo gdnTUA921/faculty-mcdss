@@ -38,6 +38,8 @@ services:
       FASTAPI_SECRET_KEY: ${FASTAPI_SECRET_KEY:-changeme}
       SESSION_DRIVER: file
       SANCTUM_STATEFUL_DOMAINS: localhost:3000
+      DOCUMENT_MAX_UPLOAD_KB: ${DOCUMENT_MAX_UPLOAD_KB:-5120}
+      DOCUMENT_ALLOWED_MIMES: ${DOCUMENT_ALLOWED_MIMES:-pdf,doc,docx,jpg,jpeg,png}
     depends_on:
       - mailhog
     networks:

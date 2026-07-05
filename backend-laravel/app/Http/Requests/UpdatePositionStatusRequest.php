@@ -14,7 +14,7 @@ class UpdatePositionStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'in:draft,open,closed,filled'],
+            'status' => ['required', 'in:open,closed,filled'],
         ];
     }
 }

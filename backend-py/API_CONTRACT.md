@@ -118,6 +118,41 @@ Response:
 }
 ```
 
+### `POST /parse-resume`
+Multipart resume parser for Laravel-to-FastAPI integration.
+
+Headers:
+- `X-Service-Key: <value>`
+
+Request:
+- multipart form field named `file`
+- accepted file types: PDF and DOCX
+
+Response:
+```json
+{
+  "name": "Jane Marie Doe",
+  "email": "jane.doe@example.com",
+  "phone": "+1 (555) 123-4567",
+  "education": [
+    { "raw_text": "B.S. Computer Science, University of Example, 2022" }
+  ],
+  "work_experience": [
+    { "raw_text": "Software Engineer at Example Labs, Jan 2021 - Present" }
+  ],
+  "certifications": [
+    { "raw_text": "AWS Certified Solutions Architect" }
+  ],
+  "publications": [
+    { "raw_text": "Doe, J. (2024). Resume Parsing with Rules. Journal of Examples." }
+  ]
+}
+```
+
+Notes:
+- The endpoint returns the parsed object directly so Laravel can store it in `applicant_profiles.parsed_resume_data`.
+- If a field is not found, the parser returns `null` for scalar fields and an empty list for sections.
+
 ## Integration Notes
 
 - `db-health` will return `503` until the local PostgreSQL credentials in `.env` match the running database.

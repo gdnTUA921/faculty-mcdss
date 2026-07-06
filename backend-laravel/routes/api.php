@@ -4,12 +4,14 @@ use App\Http\Controllers\Admin\StaffAccountController;
 use App\Http\Controllers\Api\ApplicantProfileController;
 use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\ApplicationResponseController;
+use App\Http\Controllers\Api\ApplicationStatusController;
 use App\Http\Controllers\Api\CriterionOptionController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\PositionController;
 use App\Http\Controllers\Api\PositionCriterionController;
 use App\Http\Controllers\Api\PositionFormController;
 use App\Http\Controllers\Api\PositionStatusController;
+use App\Http\Controllers\Api\StatusHistoryController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -47,6 +49,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
     // Phase 3: Admin creates staff accounts
     Route::post('/admin/staff-accounts', StaffAccountController::class);
+
+    // Phase 5: Application status management
+    Route::patch('applications/{application}/status', ApplicationStatusController::class);
+    Route::get('applications/{application}/status-history', StatusHistoryController::class);
 });
 
 // ── Director only ─────────────────────────────────────────────────────────────
@@ -72,4 +78,7 @@ Route::middleware(['auth:sanctum', 'role:internal_applicant,external_applicant']
     Route::post('/documents', [DocumentController::class, 'store']);
     Route::get('/documents', [DocumentController::class, 'index']);
     Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
+
+    // Phase 5: Applicant-facing status view
+    Route::get('/applicant/applications/{application}', [ApplicationController::class, 'show']);
 });

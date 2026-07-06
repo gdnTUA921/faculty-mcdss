@@ -126,6 +126,35 @@ class ApplicationController extends Controller
         ]);
     }
 
+    public function show(Request $request, Application $application): JsonResponse
+    {
+        $this->assertOwnership($request, $application);
+
+        $pipeline = ['applied', 'for_interview', 'for_review', 'hired'];
+        $currentIndex = array_search($application->status, $pipeline, true);
+        $pipelinePosition = $currentIndex !== false ? $currentIndex + 1 : null;
+        $totalSteps = count($pipeline);
+
+        return response()->json([
+            'data' => [
+                'id'                 => $application->id,
+                'status'             => $application->status,
+                'pipeline_position'  => $pipelinePosition,
+                'total_steps'        => $totalSteps,
+                'applied_at'         => $application->applied_at?->toIso8601String(),
+                'status_updated_at'  => $application->status_updated_at?->toIso8601String(),
+                'position'           => [
+                    'id'    => $application->position->id,
+                    'title' => $application->position->title,
+                ],
+                'hiring_round'       => [
+                    'id'   => $application->hiringRound->id,
+                    'name' => $application->hiringRound->name,
+                ],
+            ],
+        ]);
+    }
+
     private function assertOwnership(Request $request, Application $application): void
     {
         $applicantProfile = $request->user()->applicantProfile;

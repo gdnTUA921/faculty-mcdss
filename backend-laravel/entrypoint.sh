@@ -20,7 +20,7 @@ fi
 # Install Composer dependencies if vendor/ is missing
 if [ ! -d "/var/www/vendor" ]; then
     echo "Installing Composer dependencies..."
-    cd /var/www && composer install --no-interaction --prefer-dist --optimize-autoloader
+    cd /var/www && COMPOSER_PROCESS_TIMEOUT=0 composer install --no-interaction --prefer-dist --optimize-autoloader
 fi
 
 # Ensure Laravel has an environment file inside the mounted project directory.

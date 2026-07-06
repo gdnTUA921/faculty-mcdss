@@ -60,4 +60,9 @@ class Application extends Model
     {
         return $this->hasMany(Document::class);
     }
+
+    public function statusHistory(): HasMany
+    {
+        return $this->hasMany(StatusHistory::class);
+    }
 }

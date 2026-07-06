@@ -25,10 +25,7 @@ psql -U postgres -c "CREATE DATABASE faculty_mcdss;"
 cp .env.example .env
 ```
 Open `.env` and set `DB_PASSWORD` to match your local PostgreSQL password.
-Generate a stable app key and paste it into `APP_KEY`:
-```bash
-docker compose run --rm laravel php artisan key:generate --show
-```
+Leave `APP_KEY` empty for now. The Laravel container will generate it automatically on first start.
 
 ### 3. Build and start all containers
 ```bash
@@ -72,7 +69,7 @@ docker compose up -d
 | FastAPI          | http://localhost:8001        |                            |
 | FastAPI Health   | http://localhost:8001/health |                            |
 | FastAPI DB Check  | http://localhost:8001/internal/db-health | Requires `X-Service-Key` |
-| Mailpit Web UI   | http://localhost:8025        | View captured emails (dev) |
+| Mailpit Web UI   | http://localhost:8025        | View captured emails (dev); compose service is `mailhog` |
 | PostgreSQL       | localhost:5432               | Local install — user: postgres / DB: faculty_mcdss |
 
 ---
@@ -84,7 +81,7 @@ docker compose up -d
 docker compose logs -f frontend
 docker compose logs -f laravel
 docker compose logs -f fastapi
-docker compose logs -f mailhog
+docker compose logs -f mailhog  # Mailpit container/service name
 
 # Run Artisan commands
 docker compose exec laravel php artisan migrate

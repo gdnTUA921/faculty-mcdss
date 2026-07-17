@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\StatusHistoryController;
 use App\Http\Controllers\Api\PositionScoringController;
 use App\Http\Controllers\Api\PositionRankingController;
 use App\Http\Controllers\Api\ApplicationScoreBreakdownController;
+use App\Http\Controllers\Api\AssignmentRunController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -70,6 +71,8 @@ Route::middleware(['auth:sanctum', 'role:director'])->prefix('director')->group(
 Route::middleware(['auth:sanctum', 'role:admin,director'])->group(function () {
     Route::get('positions/{position}/rankings', [PositionRankingController::class, 'index']);
     Route::get('applications/{application}/score-breakdown', [ApplicationScoreBreakdownController::class, 'index']);
+    Route::post('assignment-runs', [AssignmentRunController::class, 'store']);
+    Route::get('assignment-runs/{assignmentRun}', [AssignmentRunController::class, 'show']);
 });
 
 // ── Applicant profile (internal & external) ───────────────────────────────────

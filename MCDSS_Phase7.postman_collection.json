@@ -1,0 +1,1213 @@
+{
+  "info": {
+    "name": "MCDSS - Phase 7 (Assignment / Optimization ILP)",
+    "description": "Exercises every Phase 7 (Assignment and Optimization / ILP) deliverable from TEAM_DEVELOPMENT_PLAN.md against a running `docker compose up -d` stack: JB's FastAPI `POST /run-assignment` solver (and its Laravel wrapper `POST /api/assignment-runs` / `GET /api/assignment-runs/{id}`), plus the internal faculty workload allocation variant `POST /run-faculty-workload`.\n\nBuilds one end-to-end fixture (1 position with 1 slot + 2 scored applicants) so the assignment ILP has a real binding constraint to solve (only the higher `total_wsm_score` applicant should be assigned), then a second fixture (1 internal faculty + 1 course + expertise score) for the workload ILP.\n\nPrereqs:\n1. `docker compose up -d --build`\n2. `docker compose exec laravel php artisan migrate --seed` (requires the Phase 7 migrations for `assignment_runs`, `assignment_results`, `faculty_workload`, `courses`, `faculty_load_limits`, `faculty_expertise_scores` -- added 2026-07-18).\n3. Run once: `docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"` and paste the UUID into the `department_id` collection variable.\n4. Run once: `docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\HiringRound::first()->id;\"` (seeded by HiringRoundSeeder) and paste the UUID into the `hiring_round_id` collection variable.\n5. Run the whole collection top-to-bottom via Collection Runner (order matters). Section 3 requires ONE MORE manual tinker step mid-run -- see the description on '3.6 Seed Course & Expertise Fixtures (manual prereq)'.\n\nNote on scope: `POST /run-faculty-workload` has no Laravel-side wrapper in the current implementation (unlike `/run-assignment`, which is proxied through `POST /api/assignment-runs`) -- it is called directly against FastAPI with the `X-Service-Key` header, same as JB's `/parse-resume` testing pattern from Phase 4. There is also no `GET` endpoint for `faculty_workload` results (the plan does not define one), so the final persistence check in section 3 is a manual tinker verification, not an assertable API call -- flagged the same way Phase 3's forced-password-reset gap was flagged.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "fastapi_url",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "fastapi_secret_key",
+      "value": "changeme"
+    },
+    {
+      "key": "mailpit_url",
+      "value": "http://localhost:8025"
+    },
+    {
+      "key": "department_id",
+      "value": ""
+    },
+    {
+      "key": "hiring_round_id",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "director_token",
+      "value": ""
+    },
+    {
+      "key": "position_id",
+      "value": ""
+    },
+    {
+      "key": "criterion_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_a_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_a_token",
+      "value": ""
+    },
+    {
+      "key": "application_a_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_b_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_b_token",
+      "value": ""
+    },
+    {
+      "key": "application_b_id",
+      "value": ""
+    },
+    {
+      "key": "assignment_run_id",
+      "value": ""
+    },
+    {
+      "key": "staff_email",
+      "value": ""
+    },
+    {
+      "key": "staff_temp_password",
+      "value": ""
+    },
+    {
+      "key": "staff_token",
+      "value": ""
+    },
+    {
+      "key": "internal_applicant_profile_id",
+      "value": ""
+    },
+    {
+      "key": "course_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "Login as Seeded Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Uses the seeded admin from UserSeeder.php."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Response has a token', () => pm.expect(json.token).to.be.a('string'));",
+                  "pm.test('Role is admin', () => pm.expect(json.user.role).to.eql('admin'));",
+                  "pm.collectionVariables.set('admin_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Seeded Director",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"director@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Uses the seeded director from UserSeeder.php. Director should have read-only access to assignment runs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is director', () => pm.expect(json.user.role).to.eql('director'));",
+                  "pm.collectionVariables.set('director_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check department_id is set (manual prereq)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "No `/api/departments` endpoint exists. Run once:\n  docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"\nand paste the UUID into the 'department_id' collection variable before running the rest of this collection."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('department_id collection variable is set (see request description)', () => pm.expect(pm.collectionVariables.get('department_id')).to.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check hiring_round_id is set (manual prereq)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "No `/api/hiring-rounds` endpoint exists in the current implementation. Run once:\n  docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\HiringRound::first()->id;\"\n(this returns the round seeded by HiringRoundSeeder.php -- 'AY 2026 Faculty Hiring - 1st Semester', status active) and paste the UUID into the 'hiring_round_id' collection variable. `POST /api/applications` auto-attaches the currently active round, so applications created later in this collection will already belong to this round -- this variable is only needed to pass `hiring_round_id` explicitly to the assignment and workload ILP endpoints."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('hiring_round_id collection variable is set (see request description)', () => pm.expect(pm.collectionVariables.get('hiring_round_id')).to.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Fixture - Position, Criterion, Two Scored Applications (Assignment ILP input)",
+      "item": [
+        {
+          "name": "Create Position (external, 1 slot)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Phase 7 ILP Test Lecturer\",\n  \"target_applicant_type\": \"external\",\n  \"slots_available\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "slots_available=1 is the whole point of this fixture: the ILP must choose exactly one of the two applicants below."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('position_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Numeric Criterion (weight 1.0)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Years of Relevant Experience\",\n  \"data_type\": \"numeric\",\n  \"weight\": 1.0,\n  \"min_value\": 0,\n  \"max_value\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Single criterion at weight 1.0 keeps total_wsm_score == normalized raw_value, so the winning applicant is obvious: raw_value=10 -> wsm=1.0, raw_value=2 -> wsm=0.2."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('criterion_id', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Position (weight sums to 1.0)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"open\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Position status is open', () => pm.expect(pm.response.json().data.status).to.eql('open'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Applicant A (High Scorer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Alex\",\n  \"last_name\": \"HighScore\",\n  \"email\": \"{{applicant_a_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_a_email', `phase7.applicant.a.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is external_applicant', () => pm.expect(json.user.role).to.eql('external_applicant'));",
+                  "pm.collectionVariables.set('applicant_a_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Draft Application - Applicant A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 or 201', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is draft', () => pm.expect(json.status).to.eql('draft'));",
+                  "pm.collectionVariables.set('application_a_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save Form Response - Applicant A (raw_value=10)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_a_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"responses\": [\n    {\n      \"criterion_id\": \"{{criterion_id}}\",\n      \"raw_value\": \"10\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit Application - Applicant A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_a_id}}/submit"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is applied', () => pm.expect(pm.response.json().data.status).to.eql('applied'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Applicant B (Low Scorer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Blair\",\n  \"last_name\": \"LowScore\",\n  \"email\": \"{{applicant_b_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_b_email', `phase7.applicant.b.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is external_applicant', () => pm.expect(json.user.role).to.eql('external_applicant'));",
+                  "pm.collectionVariables.set('applicant_b_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Draft Application - Applicant B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 or 201', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is draft', () => pm.expect(json.status).to.eql('draft'));",
+                  "pm.collectionVariables.set('application_b_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save Form Response - Applicant B (raw_value=2)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_b_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"responses\": [\n    {\n      \"criterion_id\": \"{{criterion_id}}\",\n      \"raw_value\": \"2\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit Application - Applicant B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_b_id}}/submit"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is applied', () => pm.expect(pm.response.json().data.status).to.eql('applied'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trigger Scoring for Position (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/score"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Rankings (verify A=1.0 beats B=0.2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/rankings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "const a = rows.find(r => r.application_id === pm.collectionVariables.get('application_a_id'));",
+                  "const b = rows.find(r => r.application_id === pm.collectionVariables.get('application_b_id'));",
+                  "pm.test('Applicant A total_wsm_score is ~1.0', () => pm.expect(parseFloat(a.total_wsm_score)).to.be.closeTo(1.0, 0.001));",
+                  "pm.test('Applicant B total_wsm_score is ~0.2', () => pm.expect(parseFloat(b.total_wsm_score)).to.be.closeTo(0.2, 0.001));",
+                  "pm.test('Applicant A outranks Applicant B', () => pm.expect(a.rank_in_position).to.be.lessThan(b.rank_in_position));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Phase 7 - Assignment Run (ILP, external applicants)",
+      "item": [
+        {
+          "name": "[Guard Rail] Applicant Cannot Trigger Assignment Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiring_round_id\": \"{{hiring_round_id}}\",\n  \"scope_applicant_type\": \"external\",\n  \"scope_position_ids\": [\n    \"{{position_id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "POST /api/assignment-runs is in the role:admin,director group per routes/api.php."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] FastAPI Rejects Missing Service Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fastapi_url}}/run-assignment",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiring_round_id\": \"{{hiring_round_id}}\",\n  \"scope_applicant_type\": \"external\",\n  \"scope_position_ids\": [\n    \"{{position_id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Direct call against FastAPI without X-Service-Key. Confirms Person 4's internal-auth deliverable from FastAPI Project Setup still guards the Phase 7 endpoint."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trigger Assignment Run as Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiring_round_id\": \"{{hiring_round_id}}\",\n  \"scope_applicant_type\": \"external\",\n  \"scope_position_ids\": [\n    \"{{position_id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Maps to the plan's Phase 7 deliverables: decision variable per applicant-position pair, objective = maximize total_wsm_score, constraint 'each position assigned at most slots_available applicants' (here slots_available=1 forces a choice between the two candidates)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "const run = json.assignment_run;",
+                  "pm.test('Run status is completed', () => pm.expect(run.status).to.eql('completed'));",
+                  "pm.test('assigned_count is 1 (only 1 slot available)', () => pm.expect(run.result_summary.assigned_count).to.eql(1));",
+                  "pm.test('candidate_count is 2 (both scored applicants considered)', () => pm.expect(run.result_summary.candidate_count).to.eql(2));",
+                  "pm.test('objective_score is ~1.0 (the winning applicant\\'s wsm score)', () => pm.expect(parseFloat(run.result_summary.objective_score)).to.be.closeTo(1.0, 0.001));",
+                  "const rowA = run.results.find(r => r.application_id === pm.collectionVariables.get('application_a_id'));",
+                  "const rowB = run.results.find(r => r.application_id === pm.collectionVariables.get('application_b_id'));",
+                  "pm.test('Applicant A (higher wsm) is assigned', () => pm.expect(rowA.is_assigned).to.eql(true));",
+                  "pm.test('Applicant B (lower wsm) is not assigned', () => pm.expect(rowB.is_assigned).to.eql(false));",
+                  "pm.collectionVariables.set('assignment_run_id', run.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Assignment Run as Director (read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs/{{assignment_run_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is completed', () => pm.expect(json.status).to.eql('completed'));",
+                  "pm.test('Has 2 result rows', () => pm.expect(json.results.length).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Applicant Cannot View Assignment Run",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs/{{assignment_run_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Unauthenticated Cannot View Assignment Run",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/assignment-runs/{{assignment_run_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Phase 7 - Faculty Workload Allocation (internal ILP variant)",
+      "item": [
+        {
+          "name": "Create Internal Staff Account (as Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Casey\",\n  \"last_name\": \"Faculty\",\n  \"email\": \"{{staff_email}}\",\n  \"role\": \"internal_applicant\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('staff_email', `phase7.faculty.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Role is internal_applicant', () => pm.expect(pm.response.json().user.role).to.eql('internal_applicant'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fetch Temp Password (via Mailpit API)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25",
+            "description": "Finds the 'Your Account Has Been Created' email sent to staff_email and extracts the temp password from the <strong> tag."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('staff_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email));",
+                  "pm.test('Account-created email found for ' + email, () => pm.expect(match).to.not.be.undefined);",
+                  "if (match) {",
+                  "    pm.sendRequest({ url: pm.collectionVariables.get('mailpit_url') + '/api/v1/message/' + match.ID, method: 'GET' }, (err, res) => {",
+                  "        if (!err && res) {",
+                  "            const body = res.json();",
+                  "            const html = body.HTML || body.Text || '';",
+                  "            const tokenMatch = html.match(/<strong>([^<]+)<\\/strong>/);",
+                  "            if (tokenMatch) {",
+                  "                pm.collectionVariables.set('staff_temp_password', tokenMatch[1].trim());",
+                  "            }",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as New Staff (Temp Password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staff_email}}\",\n  \"password\": \"{{staff_temp_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('has_temp_password is true', () => pm.expect(json.has_temp_password).to.eql(true));",
+                  "pm.collectionVariables.set('staff_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staff_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/change-password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{staff_temp_password}}\",\n  \"password\": \"NewPassw0rd!\",\n  \"password_confirmation\": \"NewPassw0rd!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "AuthController::changePassword revokes ALL existing tokens and issues a fresh one -- staff_token must be overwritten here or every subsequent request as this user will 401."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('staff_token', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Applicant Profile (capture internal_applicant_profile_id)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staff_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('applicant_type is internal', () => pm.expect(json.applicant_type).to.eql('internal'));",
+                  "pm.collectionVariables.set('internal_applicant_profile_id', json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seed Course & Expertise Fixtures (manual prereq)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "There is no CRUD API for `courses`, `faculty_load_limits`, or `faculty_expertise_scores` in the current implementation (Person 4's tables have no Laravel controllers) -- this is the one manual DB step this collection needs. Copy `internal_applicant_profile_id` from the previous response, then run (uses single-quoted --execute with double-quoted PHP strings on purpose -- no backslashes anywhere, so nothing gets mangled if this gets copy-pasted through a markdown renderer):\n\n  docker compose exec laravel php artisan tinker --execute='\n  $courseCode = \"CS701-ILP\";\n  $course = DB::table(\"courses\")->where(\"course_code\", $courseCode)->first();\n  if (!$course) {\n      $courseId = DB::table(\"courses\")->insertGetId([\n          \"department_id\" => App\\Models\\Department::first()->id,\n          \"course_code\" => $courseCode,\n          \"course_name\" => \"Phase 7 ILP Test Course\",\n          \"units\" => 3,\n          \"semester\" => \"1st Semester\",\n          \"academic_year\" => 2026,\n          \"sections_required\" => 1,\n          \"is_active\" => true,\n          \"created_at\" => now(),\n      ], \"id\");\n  } else {\n      $courseId = $course->id;\n  }\n  $profileId = \"PASTE_internal_applicant_profile_id_HERE\";\n  DB::table(\"faculty_load_limits\")->updateOrInsert(\n      [\"applicant_profile_id\" => $profileId],\n      [\"max_units\" => 6, \"updated_at\" => now()]\n  );\n  DB::table(\"faculty_expertise_scores\")->updateOrInsert(\n      [\"applicant_profile_id\" => $profileId, \"course_id\" => $courseId],\n      [\"expertise_score\" => 0.85, \"created_at\" => now()]\n  );\n  echo $courseId;\n  '\n\nPaste the echoed UUID into the 'course_id' collection variable. The course insert is idempotent (safe to re-run across collection runs); the faculty rows are keyed to whatever internal_applicant_profile_id you captured this run, so re-running the earlier steps and this tinker script together is safe too. max_units=6 >= course units=3 so the workload ILP's capacity constraint is satisfiable, and sections_required=1 with exactly one eligible faculty candidate means the solver's equality constraint (each course gets exactly sections_required faculty) is satisfiable too -- both matter, since solve_faculty_workload() in main.py uses a hard `== sections_required` constraint, not '<='."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('course_id collection variable is set (see request description)', () => pm.expect(pm.collectionVariables.get('course_id')).to.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] FastAPI Rejects Missing Service Key on Workload Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fastapi_url}}/run-faculty-workload",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiring_round_id\": \"{{hiring_round_id}}\",\n  \"semester\": \"1st Semester\",\n  \"academic_year\": 2026,\n  \"scope_department_ids\": [\n    \"{{department_id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trigger Faculty Workload Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{fastapi_secret_key}}"
+              }
+            ],
+            "url": "{{fastapi_url}}/run-faculty-workload",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiring_round_id\": \"{{hiring_round_id}}\",\n  \"semester\": \"1st Semester\",\n  \"academic_year\": 2026,\n  \"scope_department_ids\": [\n    \"{{department_id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Maps to the plan's 'Faculty workload allocation (internal ILP variant)' deliverable: assigns internal faculty to courses under a max-units-per-faculty constraint and an expertise-alignment objective. Writes the assigned row(s) to `faculty_workload` via a direct DB write (create_write_connection() in main.py), matching the plan's note that Phase 7 may write to the DB directly instead of round-tripping through a Laravel endpoint."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('status is ok', () => pm.expect(json.status).to.eql('ok'));",
+                  "pm.test('assigned_units is 3 (course units)', () => pm.expect(json.assigned_units).to.eql(3));",
+                  "pm.test('objective_score is ~0.85 (the expertise score)', () => pm.expect(json.objective_score).to.be.closeTo(0.85, 0.001));",
+                  "const row = json.results.find(r => r.course_id === pm.collectionVariables.get('course_id') && r.applicant_profile_id === pm.collectionVariables.get('internal_applicant_profile_id'));",
+                  "pm.test('Our faculty/course pairing was found', () => pm.expect(row).to.not.be.undefined);",
+                  "pm.test('Pairing is_assigned is true', () => pm.expect(row.is_assigned).to.eql(true));",
+                  "pm.test('Pairing expertise_score is ~0.85', () => pm.expect(row.expertise_score).to.be.closeTo(0.85, 0.001));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Manual Verification] Confirm faculty_workload Row Persisted",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "[Known Gap] TEAM_DEVELOPMENT_PLAN.md's Phase 7 Key Tables list `faculty_workload` but defines no GET endpoint for it (unlike assignment_runs, which gets `GET /api/assignment-runs/{id}`). To confirm the previous request actually persisted a row, run (single-quoted --execute, double-quoted PHP strings -- no backslashes, safe to copy straight out of this markdown-rendered description):\n\n  docker compose exec laravel php artisan tinker --execute='\n  $rows = DB::table(\"faculty_workload\")->where(\"course_code\", \"CS701-ILP\")->get();\n  echo $rows->count() . \" row(s), units=\" . $rows->sum(\"units\");\n  '\n\nExpected: '1 row(s), units=3'. If a Laravel GET endpoint for faculty_workload is added later, replace this manual step with a real assertion, the same way this collection's assignment-run checks are automated."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('See request description -- no API exists to assert this automatically', () => pm.expect(true).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -899,7 +899,7 @@ def persist_faculty_workload_run(
                         str(run_id),
                         str(payload.hiring_round_id),
                         None,
-                        [str(department_id) for department_id in payload.scope_department_ids] if payload.scope_department_ids else None,
+                        Json([str(department_id) for department_id in payload.scope_department_ids]) if payload.scope_department_ids else None,
                         Json({
                             "objective": "maximize_total_expertise_score",
                             "solver": "cbc",

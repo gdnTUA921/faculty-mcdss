@@ -374,6 +374,50 @@ COMMENT ON COLUMN assignment_results.objective_score IS 'WSM score contribution 
 
 -- -----------------------------------------------------------------------------
 
+CREATE TABLE courses (
+    id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    department_id           UUID            NOT NULL REFERENCES departments (id) ON DELETE RESTRICT,
+    course_code             VARCHAR(20)     NOT NULL UNIQUE,
+    course_name             VARCHAR(200)    NOT NULL,
+    units                   INTEGER         NOT NULL CHECK (units > 0),
+    semester                VARCHAR(50)     NOT NULL,
+    academic_year           INTEGER         NOT NULL CHECK (academic_year >= 2000),
+    sections_required       INTEGER         NOT NULL DEFAULT 1 CHECK (sections_required >= 1),
+    is_active               BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE courses IS 'Course offerings to be assigned to internal faculty through the workload allocation ILP.';
+
+
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE faculty_load_limits (
+    applicant_profile_id    UUID            PRIMARY KEY REFERENCES applicant_profiles (id) ON DELETE CASCADE,
+    max_units               INTEGER         NOT NULL CHECK (max_units > 0),
+    updated_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE faculty_load_limits IS 'Maximum teaching load for each internal faculty member. Used as the capacity constraint in the workload ILP.';
+
+
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE faculty_expertise_scores (
+    id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    applicant_profile_id    UUID            NOT NULL REFERENCES applicant_profiles (id) ON DELETE CASCADE,
+    course_id               UUID            NOT NULL REFERENCES courses (id) ON DELETE CASCADE,
+    expertise_score         DECIMAL(5,4)    NOT NULL CHECK (expertise_score >= 0 AND expertise_score <= 1),
+    notes                   TEXT,
+    created_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_faculty_course_expertise UNIQUE (applicant_profile_id, course_id)
+);
+
+COMMENT ON TABLE faculty_expertise_scores IS 'Alignment score between internal faculty and a course. Higher values indicate a better expertise match.';
+
+
+-- -----------------------------------------------------------------------------
+
 CREATE TABLE faculty_workload (
     id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
     applicant_profile_id    UUID            NOT NULL REFERENCES applicant_profiles (id) ON DELETE RESTRICT,
@@ -455,6 +499,17 @@ CREATE INDEX idx_assignment_runs_status     ON assignment_runs (status);
 CREATE INDEX idx_assignment_results_run         ON assignment_results (assignment_run_id);
 CREATE INDEX idx_assignment_results_application ON assignment_results (application_id);
 CREATE INDEX idx_assignment_results_assigned    ON assignment_results (assignment_run_id, is_assigned) WHERE is_assigned = TRUE;
+
+-- courses
+CREATE INDEX idx_courses_department    ON courses (department_id);
+CREATE INDEX idx_courses_term          ON courses (academic_year, semester);
+
+-- faculty_load_limits
+CREATE INDEX idx_faculty_load_limits_units ON faculty_load_limits (max_units);
+
+-- faculty_expertise_scores
+CREATE INDEX idx_faculty_expertise_profile ON faculty_expertise_scores (applicant_profile_id);
+CREATE INDEX idx_faculty_expertise_course   ON faculty_expertise_scores (course_id);
 
 -- faculty_workload
 CREATE INDEX idx_faculty_workload_profile   ON faculty_workload (applicant_profile_id);

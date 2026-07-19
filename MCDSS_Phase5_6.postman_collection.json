@@ -1,0 +1,904 @@
+{
+  "info": {
+    "name": "MCDSS - Phase 5 & 6 (Status Tracker + Scoring/Ranking)",
+    "description": "Exercises every Phase 5 (Hiring Status Tracker) and Phase 6 (Scoring & Ranking) deliverable from TEAM_DEVELOPMENT_PLAN.md against a running `docker compose up -d` stack. Phase 5 and 6 are Wave 4 siblings that both act on a submitted application, so this collection builds one end-to-end fixture (position + 3 weighted criteria + a submitted application) and then exercises both phases against it, including role guard-rails and the audit-trail / re-triggerable-scoring notes called out in the plan.\n\nPrereqs:\n1. `docker compose up -d --build`\n2. `docker compose exec laravel php artisan migrate --seed`\n3. Run once: `docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"` and paste the UUID into the `department_id` collection variable.\n4. Run the whole collection top-to-bottom via Collection Runner (order matters — later requests depend on IDs captured earlier).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "department_id", "value": "" },
+    { "key": "admin_token", "value": "" },
+    { "key": "director_token", "value": "" },
+    { "key": "applicant_email", "value": "" },
+    { "key": "applicant_token", "value": "" },
+    { "key": "position_id", "value": "" },
+    { "key": "criterion_numeric_id", "value": "" },
+    { "key": "criterion_select_id", "value": "" },
+    { "key": "criterion_boolean_id", "value": "" },
+    { "key": "application_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "Login as Seeded Admin",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login",
+            "description": "Uses the seeded admin from UserSeeder.php."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Response has a token', () => pm.expect(json.token).to.be.a('string'));",
+                  "pm.test('Role is admin', () => pm.expect(json.user.role).to.eql('admin'));",
+                  "pm.collectionVariables.set('admin_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Seeded Director",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"director@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/auth/login",
+            "description": "Uses the seeded director from UserSeeder.php. Director should have read-only access to rankings/breakdowns and no write access to status or scoring."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is director', () => pm.expect(json.user.role).to.eql('director'));",
+                  "pm.collectionVariables.set('director_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check department_id is set (manual prereq)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "No /api/departments endpoint exists. Run once:\n  docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"\nand paste the UUID into the 'department_id' collection variable before running the rest of this collection."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('department_id collection variable is set (see request description)', () => pm.expect(pm.collectionVariables.get('department_id')).to.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Fixture Setup - Position, Criteria, Submitted Application",
+      "item": [
+        {
+          "name": "Create Position (external only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Phase 5-6 Test Lecturer\",\n  \"target_applicant_type\": \"external\",\n  \"slots_available\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('position_id', json.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Numeric Criterion (weight 0.5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Years of Teaching Experience\",\n  \"data_type\": \"numeric\",\n  \"weight\": 0.5,\n  \"min_value\": 0,\n  \"max_value\": 10\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "description": "Applicant will submit raw_value=5 → normalized = (5-0)/(10-0) = 0.5 → weighted = 0.25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('criterion_numeric_id', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Select Criterion (weight 0.3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Highest Degree Obtained\",\n  \"data_type\": \"select\",\n  \"weight\": 0.3\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('criterion_select_id', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Option - Bachelor's (score 0.3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Bachelor's\",\n  \"value\": \"bs\",\n  \"score_value\": 0.3\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_select_id}}/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 201', () => pm.response.to.have.status(201));" ] }
+            }
+          ]
+        },
+        {
+          "name": "Create Option - Master's (score 0.7)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Master's\",\n  \"value\": \"ms\",\n  \"score_value\": 0.7\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_select_id}}/options",
+            "description": "Applicant will submit raw_value=ms → normalized = 0.7 (score_value) → weighted = 0.3 * 0.7 = 0.21"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 201', () => pm.response.to.have.status(201));" ] }
+            }
+          ]
+        },
+        {
+          "name": "Create Option - PhD (score 1.0)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"PhD\",\n  \"value\": \"phd\",\n  \"score_value\": 1.0\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_select_id}}/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 201', () => pm.response.to.have.status(201));" ] }
+            }
+          ]
+        },
+        {
+          "name": "Create Boolean Criterion (weight 0.2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Has Active Research\",\n  \"data_type\": \"boolean\",\n  \"weight\": 0.2\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "description": "Applicant will submit raw_value=true → normalized = 1.0 → weighted = 0.2 * 1.0 = 0.2\n\nExpected total_wsm_score once all 3 responses are in: 0.25 + 0.21 + 0.2 = 0.66"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('criterion_boolean_id', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Position (weights sum to 1.0)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"open\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/positions/{{position_id}}/status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (0.5+0.3+0.2=1.0 passes)', () => pm.response.to.have.status(200));",
+                  "pm.test('Position status is open', () => pm.expect(pm.response.json().data.status).to.eql('open'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register External Applicant",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [ "pm.collectionVariables.set('applicant_email', `phase56.applicant.${Date.now()}@example.com`);" ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is external_applicant', () => pm.expect(json.user.role).to.eql('external_applicant'));",
+                  "pm.collectionVariables.set('applicant_token', json.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Phase56\",\n  \"last_name\": \"Applicant\",\n  \"email\": \"{{applicant_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/register"
+          }
+        },
+        {
+          "name": "Create Draft Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 or 201', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is draft', () => pm.expect(json.data.status).to.eql('draft'));",
+                  "pm.collectionVariables.set('application_id', json.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save Form Responses",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"responses\": [\n    { \"criterion_id\": \"{{criterion_numeric_id}}\", \"raw_value\": \"5\" },\n    { \"criterion_id\": \"{{criterion_select_id}}\", \"raw_value\": \"ms\" },\n    { \"criterion_id\": \"{{criterion_boolean_id}}\", \"raw_value\": \"true\" }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] }
+            }
+          ]
+        },
+        {
+          "name": "Submit Application",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_token}}" } ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/submit"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is applied', () => pm.expect(json.data.status).to.eql('applied'));",
+                  "pm.test('applied_at is set', () => pm.expect(json.data.applied_at).to.not.be.null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Phase 6 - Scoring & Ranking",
+      "item": [
+        {
+          "name": "[Guard Rail] Applicant Cannot Trigger Scoring",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/score"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Director Cannot Trigger Scoring",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{director_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/score",
+            "description": "Scoring is an admin-only action per routes/api.php; director should be read-only for rankings/breakdown only."
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+          ]
+        },
+        {
+          "name": "Trigger Scoring as Admin",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/score"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+          ]
+        },
+        {
+          "name": "Get Rankings as Admin",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/rankings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test('Contains our application', () => pm.expect(rows.some(r => r.application_id === pm.collectionVariables.get('application_id'))).to.be.true);",
+                  "const row = rows.find(r => r.application_id === pm.collectionVariables.get('application_id'));",
+                  "pm.test('total_wsm_score is ~0.66', () => pm.expect(parseFloat(row.total_wsm_score)).to.be.closeTo(0.66, 0.001));",
+                  "pm.test('rank_in_position is 1 (only applicant)', () => pm.expect(row.rank_in_position).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Rankings as Director (read-only allowed)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{director_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/rankings"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Applicant Cannot View Rankings",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/rankings"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+          ]
+        },
+        {
+          "name": "Get Score Breakdown as Admin",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/score-breakdown"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('total_wsm_score is ~0.66', () => pm.expect(parseFloat(json.total_wsm_score)).to.be.closeTo(0.66, 0.001));",
+                  "pm.test('Breakdown has 3 rows (one per criterion)', () => pm.expect(json.breakdown.length).to.eql(3));",
+                  "const numeric = json.breakdown.find(b => b.criterion_name === 'Years of Teaching Experience');",
+                  "pm.test('Numeric weighted_score is ~0.25', () => pm.expect(parseFloat(numeric.weighted_score)).to.be.closeTo(0.25, 0.001));",
+                  "const select = json.breakdown.find(b => b.criterion_name === 'Highest Degree Obtained');",
+                  "pm.test('Select weighted_score is ~0.21', () => pm.expect(parseFloat(select.weighted_score)).to.be.closeTo(0.21, 0.001));",
+                  "const boolean = json.breakdown.find(b => b.criterion_name === 'Has Active Research');",
+                  "pm.test('Boolean weighted_score is ~0.20', () => pm.expect(parseFloat(boolean.weighted_score)).to.be.closeTo(0.20, 0.001));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Score Breakdown as Director",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{director_token}}" } ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/score-breakdown"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Applicant Cannot View Score Breakdown",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_token}}" } ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/score-breakdown",
+            "description": "Plan notes: 'Do not expose scoring to applicants — breakdown is HR/Director only.'"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+          ]
+        },
+        {
+          "name": "Edit Criterion Weight - Boolean 0.2 -> 0.1",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight\": 0.1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_boolean_id}}",
+            "description": "Lower the boolean weight first so the running total never exceeds 1.0 (the API only guards against exceeding 1.0, not enforcing an exact re-sum outside the 'open' transition)."
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+          ]
+        },
+        {
+          "name": "Edit Criterion Weight - Numeric 0.5 -> 0.6",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight\": 0.6\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/criteria/{{criterion_numeric_id}}",
+            "description": "New weight sum: 0.6 + 0.3 + 0.1 = 1.0. New expected total_wsm_score after re-scoring: (0.5*0.6)+(0.7*0.3)+(1.0*0.1) = 0.3+0.21+0.1 = 0.61"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+          ]
+        },
+        {
+          "name": "Re-trigger Scoring After Weight Edit",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/score",
+            "description": "Plan notes: 'WSM computation runs per position and should be re-triggerable if criteria weights are edited after initial scoring.'"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+          ]
+        },
+        {
+          "name": "Get Score Breakdown After Re-score (verify updated total)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/score-breakdown"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('total_wsm_score updated to ~0.61', () => pm.expect(parseFloat(json.total_wsm_score)).to.be.closeTo(0.61, 0.001));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Phase 5 - Hiring Status Tracker",
+      "item": [
+        {
+          "name": "[Guard Rail] Director Cannot Change Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{director_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_interview\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status",
+            "description": "PATCH .../status is in the admin-only route group; director is read-only per the plan."
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Applicant Cannot Change Own Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{applicant_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_interview\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Cannot Skip Pipeline Stages (applied -> hired)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"hired\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status",
+            "description": "Plan notes: 'Status transitions must be enforced server-side.' Current status is 'applied'; only for_interview/rejected/withdrawn are legal next states."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Error mentions invalid transition', () => pm.expect(JSON.stringify(pm.response.json())).to.include('Invalid transition'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Advance Status: applied -> for_interview",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_interview\",\n  \"notes\": \"Shortlisted after initial screening.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('New status is for_interview', () => pm.expect(pm.response.json().data.status).to.eql('for_interview'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Status History (after 1 change)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/status-history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Exactly 1 audit row so far', () => pm.expect(rows.length).to.eql(1));",
+                  "pm.test('Row records applied -> for_interview', () => {",
+                  "  pm.expect(rows[0].previous_status).to.eql('applied');",
+                  "  pm.expect(rows[0].new_status).to.eql('for_interview');",
+                  "});",
+                  "pm.test('changed_by is the admin who made the change', () => pm.expect(rows[0].changed_by.email).to.eql('admin@mcdss.local'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Cannot Skip Pipeline Stages (for_interview -> hired)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"hired\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 422', () => pm.response.to.have.status(422));" ] } }
+          ]
+        },
+        {
+          "name": "Advance Status: for_interview -> for_review",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_review\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));", "pm.test('New status is for_review', () => pm.expect(pm.response.json().data.status).to.eql('for_review'));" ] } }
+          ]
+        },
+        {
+          "name": "Advance Status: for_review -> hired",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"hired\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status"
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));", "pm.test('New status is hired', () => pm.expect(pm.response.json().data.status).to.eql('hired'));" ] } }
+          ]
+        },
+        {
+          "name": "Get Status History (after 3 changes, insert-only audit trail)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/status-history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('3 audit rows, never updated in place', () => pm.expect(rows.length).to.eql(3));",
+                  "const ids = new Set(rows.map(r => r.id));",
+                  "pm.test('All 3 rows have distinct ids (append-only)', () => pm.expect(ids.size).to.eql(3));",
+                  "pm.test('Chain matches applied -> for_interview -> for_review -> hired', () => {",
+                  "  pm.expect(rows[0].previous_status).to.eql('applied');",
+                  "  pm.expect(rows[0].new_status).to.eql('for_interview');",
+                  "  pm.expect(rows[1].previous_status).to.eql('for_interview');",
+                  "  pm.expect(rows[1].new_status).to.eql('for_review');",
+                  "  pm.expect(rows[2].previous_status).to.eql('for_review');",
+                  "  pm.expect(rows[2].new_status).to.eql('hired');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Cannot Change Status Once Hired (final state)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"rejected\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/api/applications/{{application_id}}/status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Error mentions final state', () => pm.expect(JSON.stringify(pm.response.json())).to.include('final state'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Applicant: Get My Application Status",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_token}}" } ],
+            "url": "{{base_url}}/api/applicant/applications/{{application_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json().data;",
+                  "pm.test('Reflects hired status', () => pm.expect(json.status).to.eql('hired'));",
+                  "pm.test('pipeline_position is 4 of 4', () => {",
+                  "  pm.expect(json.pipeline_position).to.eql(4);",
+                  "  pm.expect(json.total_steps).to.eql(4);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

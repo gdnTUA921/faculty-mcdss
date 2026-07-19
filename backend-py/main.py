@@ -3,11 +3,14 @@ import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Literal
+from uuid import UUID, uuid4
 
 import psycopg2
 from dotenv import load_dotenv
 from docx import Document
 from fastapi import Depends, File, FastAPI, Header, HTTPException, UploadFile, status
+from psycopg2.extras import Json
 from psycopg2 import OperationalError
 import pulp
 import spacy
@@ -55,6 +58,17 @@ def create_readonly_connection():
     )
     connection.set_session(readonly=True, autocommit=True)
     return connection
+
+
+def create_write_connection():
+    settings = get_settings()
+    return psycopg2.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        dbname=settings.db_database,
+        user=settings.db_username,
+        password=settings.db_password,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -358,6 +372,75 @@ class RankingPreviewResponse(BaseModel):
     rankings: list[RankingItem]
 
 
+class AssignmentRunRequest(BaseModel):
+    hiring_round_id: UUID
+    scope_applicant_type: Literal['external', 'internal', 'both']
+    scope_position_ids: list[UUID] | None = None
+    scope_department_ids: list[UUID] | None = None
+
+
+class AssignmentRunResult(BaseModel):
+    application_id: UUID
+    applicant_profile_id: UUID
+    position_id: UUID
+    is_assigned: bool
+    objective_score: float
+
+
+class AssignmentRunResponse(BaseModel):
+    status: str
+    objective_score: float
+    assigned_count: int
+    candidate_count: int
+    results: list[AssignmentRunResult]
+
+
+class WorkloadCourseInput(BaseModel):
+    course_id: UUID
+    department_id: UUID
+    course_code: str
+    course_name: str
+    units: int
+    sections_required: int
+
+
+class WorkloadFacultyInput(BaseModel):
+    applicant_profile_id: UUID
+    max_units: int
+
+
+class WorkloadExpertiseInput(BaseModel):
+    applicant_profile_id: UUID
+    course_id: UUID
+    expertise_score: float
+
+
+class FacultyWorkloadRequest(BaseModel):
+    hiring_round_id: UUID
+    semester: str
+    academic_year: int
+    scope_department_ids: list[UUID] | None = None
+
+
+class FacultyWorkloadResult(BaseModel):
+    applicant_profile_id: UUID
+    course_id: UUID
+    course_code: str
+    course_name: str
+    department_id: UUID
+    units: int
+    expertise_score: float
+    is_assigned: bool
+
+
+class FacultyWorkloadResponse(BaseModel):
+    status: str
+    objective_score: float
+    assigned_units: int
+    candidate_count: int
+    results: list[FacultyWorkloadResult]
+
+
 @app.post("/parse-resume", dependencies=[Depends(verify_service_key)])
 async def parse_resume(file: UploadFile = File(...)) -> ParsedResumeData:
     file_type = resolve_resume_file_type(file)
@@ -514,4 +597,463 @@ def preview_rankings(payload: RankingPreviewRequest) -> RankingPreviewResponse:
         status="ok",
         position_id=payload.position_id,
         rankings=rankings,
+    )
+
+
+def fetch_assignment_candidates(payload: AssignmentRunRequest) -> list[dict[str, object]]:
+    settings = get_settings()
+    connection = None
+
+    query = [
+        """
+        SELECT
+            a.id AS application_id,
+            a.applicant_profile_id,
+            a.position_id,
+            a.total_wsm_score,
+            a.status,
+            ap.applicant_type,
+            p.department_id,
+            p.slots_available
+        FROM applications a
+        INNER JOIN applicant_profiles ap ON ap.id = a.applicant_profile_id
+        INNER JOIN positions p ON p.id = a.position_id
+        WHERE a.hiring_round_id = %s
+          AND a.status IN ('applied', 'for_review')
+          AND a.total_wsm_score IS NOT NULL
+        """,
+    ]
+    parameters: list[object] = [str(payload.hiring_round_id)]
+
+    if payload.scope_applicant_type != 'both':
+        query.append("AND ap.applicant_type = %s")
+        parameters.append(payload.scope_applicant_type)
+
+    if payload.scope_position_ids:
+        query.append("AND a.position_id = ANY(%s::uuid[])")
+        parameters.append([str(position_id) for position_id in payload.scope_position_ids])
+
+    if payload.scope_department_ids:
+        query.append("AND p.department_id = ANY(%s::uuid[])")
+        parameters.append([str(department_id) for department_id in payload.scope_department_ids])
+
+    query.append("ORDER BY a.total_wsm_score DESC, a.id ASC")
+
+    try:
+        connection = create_readonly_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("\n".join(query), parameters)
+            rows = cursor.fetchall()
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "unavailable",
+                "database": settings.db_database,
+                "host": settings.db_host,
+                "reachable": False,
+                "error": str(exc).splitlines()[0],
+            },
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    candidates: list[dict[str, object]] = []
+    for row in rows:
+        candidates.append(
+            {
+                "application_id": UUID(str(row[0])),
+                "applicant_profile_id": UUID(str(row[1])),
+                "position_id": UUID(str(row[2])),
+                "total_wsm_score": float(row[3] or 0),
+                "slots_available": int(row[7]),
+            }
+        )
+
+    return candidates
+
+
+def fetch_workload_inputs(payload: FacultyWorkloadRequest) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[tuple[UUID, UUID], float]]:
+    settings = get_settings()
+    connection = None
+
+    try:
+        connection = create_readonly_connection()
+        with connection.cursor() as cursor:
+            course_query = """
+                SELECT
+                    c.id,
+                    c.department_id,
+                    c.course_code,
+                    c.course_name,
+                    c.units,
+                    c.sections_required
+                FROM courses c
+                WHERE c.is_active = TRUE
+                  AND c.academic_year = %s
+                  AND c.semester = %s
+            """
+            course_params: list[object] = [payload.academic_year, payload.semester]
+            if payload.scope_department_ids:
+                course_query += " AND c.department_id = ANY(%s::uuid[])"
+                course_params.append([str(department_id) for department_id in payload.scope_department_ids])
+            course_query += " ORDER BY c.course_code ASC"
+            cursor.execute(course_query, course_params)
+            course_rows = cursor.fetchall()
+
+            faculty_query = """
+                SELECT
+                    ap.id,
+                    COALESCE(fll.max_units, 0)
+                FROM applicant_profiles ap
+                INNER JOIN users u ON u.id = ap.user_id
+                LEFT JOIN faculty_load_limits fll ON fll.applicant_profile_id = ap.id
+                WHERE ap.applicant_type = 'internal'
+                  AND u.is_active = TRUE
+                ORDER BY ap.id ASC
+            """
+            cursor.execute(faculty_query)
+            faculty_rows = cursor.fetchall()
+
+            expertise_query = """
+                SELECT
+                    fes.applicant_profile_id,
+                    fes.course_id,
+                    fes.expertise_score
+                FROM faculty_expertise_scores fes
+                INNER JOIN courses c ON c.id = fes.course_id
+                WHERE c.academic_year = %s
+                  AND c.semester = %s
+            """
+            expertise_params: list[object] = [payload.academic_year, payload.semester]
+            if payload.scope_department_ids:
+                expertise_query += " AND c.department_id = ANY(%s::uuid[])"
+                expertise_params.append([str(department_id) for department_id in payload.scope_department_ids])
+            cursor.execute(expertise_query, expertise_params)
+            expertise_rows = cursor.fetchall()
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "unavailable",
+                "database": settings.db_database,
+                "host": settings.db_host,
+                "reachable": False,
+                "error": str(exc).splitlines()[0],
+            },
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    courses = [
+        {
+            "course_id": UUID(str(row[0])),
+            "department_id": UUID(str(row[1])),
+            "course_code": str(row[2]),
+            "course_name": str(row[3]),
+            "units": int(row[4]),
+            "sections_required": int(row[5]),
+        }
+        for row in course_rows
+    ]
+    faculty = [
+        {
+            "applicant_profile_id": UUID(str(row[0])),
+            "max_units": int(row[1]),
+        }
+        for row in faculty_rows
+        if int(row[1]) > 0
+    ]
+    expertise: dict[tuple[UUID, UUID], float] = {
+        (UUID(str(row[0])), UUID(str(row[1]))): float(row[2]) for row in expertise_rows
+    }
+
+    return courses, faculty, expertise
+
+
+def solve_faculty_workload(
+    courses: list[dict[str, object]],
+    faculty: list[dict[str, object]],
+    expertise: dict[tuple[UUID, UUID], float],
+) -> tuple[list[FacultyWorkloadResult], float, int]:
+    if not courses or not faculty:
+        return [], 0.0, 0
+
+    problem = pulp.LpProblem("mcdss_faculty_workload", pulp.LpMaximize)
+    decision_variables: dict[tuple[UUID, UUID], pulp.LpVariable] = {}
+
+    for faculty_member in faculty:
+        faculty_id = faculty_member["applicant_profile_id"]
+        assert isinstance(faculty_id, UUID)
+        for course in courses:
+            course_id = course["course_id"]
+            assert isinstance(course_id, UUID)
+            decision_variables[(faculty_id, course_id)] = pulp.LpVariable(
+                f"load_{faculty_id.hex}_{course_id.hex}",
+                lowBound=0,
+                upBound=1,
+                cat="Binary",
+            )
+
+    problem += pulp.lpSum(
+        expertise.get((faculty_id, course_id), 0.0) * decision_variables[(faculty_id, course_id)]
+        for faculty_id, course_id in decision_variables
+    )
+
+    for course in courses:
+        course_id = course["course_id"]
+        sections_required = int(course["sections_required"])
+        assert isinstance(course_id, UUID)
+        problem += pulp.lpSum(
+            decision_variables[(faculty_member["applicant_profile_id"], course_id)]
+            for faculty_member in faculty
+            if (faculty_member["applicant_profile_id"], course_id) in decision_variables
+        ) == sections_required
+
+    for faculty_member in faculty:
+        faculty_id = faculty_member["applicant_profile_id"]
+        max_units = int(faculty_member["max_units"])
+        problem += pulp.lpSum(
+            int(next(course["units"] for course in courses if course["course_id"] == course_id))
+            * decision_variables[(faculty_id, course_id)]
+            for course_id in [course["course_id"] for course in courses]
+            if (faculty_id, course_id) in decision_variables
+        ) <= max_units
+
+    solver = pulp.PULP_CBC_CMD(msg=False)
+    problem.solve(solver)
+
+    results: list[FacultyWorkloadResult] = []
+    assigned_units = 0
+    for course in courses:
+        course_id = course["course_id"]
+        department_id = course["department_id"]
+        for faculty_member in faculty:
+            faculty_id = faculty_member["applicant_profile_id"]
+            assert isinstance(course_id, UUID)
+            assert isinstance(department_id, UUID)
+            assert isinstance(faculty_id, UUID)
+            is_assigned = float(pulp.value(decision_variables[(faculty_id, course_id)]) or 0) >= 0.5
+            if is_assigned:
+                assigned_units += int(course["units"])
+            results.append(
+                FacultyWorkloadResult(
+                    applicant_profile_id=faculty_id,
+                    course_id=course_id,
+                    course_code=str(course["course_code"]),
+                    course_name=str(course["course_name"]),
+                    department_id=department_id,
+                    units=int(course["units"]),
+                    expertise_score=float(expertise.get((faculty_id, course_id), 0.0)),
+                    is_assigned=is_assigned,
+                )
+            )
+
+    return results, float(pulp.value(problem.objective) or 0), assigned_units
+
+
+def persist_faculty_workload_run(
+    payload: FacultyWorkloadRequest,
+    results: list[FacultyWorkloadResult],
+    objective_score: float,
+    assigned_units: int,
+) -> UUID:
+    run_id = uuid4()
+    connection = None
+
+    try:
+        connection = create_write_connection()
+        with connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO assignment_runs (
+                        id,
+                        hiring_round_id,
+                        scope_applicant_type,
+                        scope_position_ids,
+                        scope_department_ids,
+                        ilp_parameters,
+                        status,
+                        result_summary,
+                        run_at,
+                        completed_at,
+                        run_by
+                    ) VALUES (
+                        %s,
+                        %s,
+                        'internal',
+                        %s,
+                        %s,
+                        %s,
+                        'completed',
+                        %s,
+                        NOW(),
+                        NOW(),
+                        NULL
+                    )
+                    """,
+                    [
+                        str(run_id),
+                        str(payload.hiring_round_id),
+                        None,
+                        Json([str(department_id) for department_id in payload.scope_department_ids]) if payload.scope_department_ids else None,
+                        Json({
+                            "objective": "maximize_total_expertise_score",
+                            "solver": "cbc",
+                            "semester": payload.semester,
+                            "academic_year": payload.academic_year,
+                        }),
+                        Json({
+                            "objective_score": objective_score,
+                            "assigned_units": assigned_units,
+                            "candidate_count": len(results),
+                        }),
+                    ],
+                )
+
+                for result in results:
+                    if not result.is_assigned:
+                        continue
+
+                    cursor.execute(
+                        """
+                        INSERT INTO faculty_workload (
+                            applicant_profile_id,
+                            assignment_run_id,
+                            department_id,
+                            course_code,
+                            course_name,
+                            units,
+                            semester,
+                            academic_year,
+                            assigned_at
+                        ) VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            NOW()
+                        )
+                        """,
+                        [
+                            str(result.applicant_profile_id),
+                            str(run_id),
+                            str(result.department_id),
+                            result.course_code,
+                            result.course_name,
+                            result.units,
+                            payload.semester,
+                            payload.academic_year,
+                        ],
+                    )
+    finally:
+        if connection is not None:
+            connection.close()
+
+    return run_id
+
+
+def solve_assignment_problem(candidates: list[dict[str, object]]) -> tuple[list[AssignmentRunResult], float]:
+    if not candidates:
+        return [], 0.0
+
+    problem = pulp.LpProblem("mcdss_assignment_run", pulp.LpMaximize)
+    decision_variables: dict[UUID, pulp.LpVariable] = {}
+
+    for candidate in candidates:
+        application_id = candidate["application_id"]
+        assert isinstance(application_id, UUID)
+        decision_variables[application_id] = pulp.LpVariable(
+            f"assign_{application_id.hex}",
+            lowBound=0,
+            upBound=1,
+            cat="Binary",
+        )
+
+    problem += pulp.lpSum(
+        float(candidate["total_wsm_score"]) * decision_variables[candidate["application_id"]]
+        for candidate in candidates
+    )
+
+    by_applicant_profile: dict[UUID, list[UUID]] = {}
+    by_position: dict[UUID, list[UUID]] = {}
+
+    for candidate in candidates:
+        applicant_profile_id = candidate["applicant_profile_id"]
+        position_id = candidate["position_id"]
+        application_id = candidate["application_id"]
+
+        assert isinstance(applicant_profile_id, UUID)
+        assert isinstance(position_id, UUID)
+        assert isinstance(application_id, UUID)
+
+        by_applicant_profile.setdefault(applicant_profile_id, []).append(application_id)
+        by_position.setdefault(position_id, []).append(application_id)
+
+    for application_ids in by_applicant_profile.values():
+        problem += pulp.lpSum(decision_variables[application_id] for application_id in application_ids) <= 1
+
+    for position_id, application_ids in by_position.items():
+        slots_available = int(next(candidate["slots_available"] for candidate in candidates if candidate["position_id"] == position_id))
+        problem += pulp.lpSum(decision_variables[application_id] for application_id in application_ids) <= slots_available
+
+    solver = pulp.PULP_CBC_CMD(msg=False)
+    problem.solve(solver)
+
+    results: list[AssignmentRunResult] = []
+    for candidate in candidates:
+        application_id = candidate["application_id"]
+        applicant_profile_id = candidate["applicant_profile_id"]
+        position_id = candidate["position_id"]
+        assert isinstance(application_id, UUID)
+        assert isinstance(applicant_profile_id, UUID)
+        assert isinstance(position_id, UUID)
+
+        is_assigned = float(pulp.value(decision_variables[application_id]) or 0) >= 0.5
+        results.append(
+            AssignmentRunResult(
+                application_id=application_id,
+                applicant_profile_id=applicant_profile_id,
+                position_id=position_id,
+                is_assigned=is_assigned,
+                objective_score=float(candidate["total_wsm_score"]),
+            )
+        )
+
+    return results, float(pulp.value(problem.objective) or 0)
+
+
+@app.post("/run-assignment", dependencies=[Depends(verify_service_key)])
+def run_assignment(payload: AssignmentRunRequest) -> AssignmentRunResponse:
+    candidates = fetch_assignment_candidates(payload)
+    results, objective_score = solve_assignment_problem(candidates)
+
+    return AssignmentRunResponse(
+        status="ok",
+        objective_score=objective_score,
+        assigned_count=sum(1 for result in results if result.is_assigned),
+        candidate_count=len(results),
+        results=results,
+    )
+
+
+@app.post("/run-faculty-workload", dependencies=[Depends(verify_service_key)])
+def run_faculty_workload(payload: FacultyWorkloadRequest) -> FacultyWorkloadResponse:
+    courses, faculty, expertise = fetch_workload_inputs(payload)
+    results, objective_score, assigned_units = solve_faculty_workload(courses, faculty, expertise)
+    persist_faculty_workload_run(payload, results, objective_score, assigned_units)
+
+    return FacultyWorkloadResponse(
+        status="ok",
+        objective_score=objective_score,
+        assigned_units=assigned_units,
+        candidate_count=len(results),
+        results=results,
     )

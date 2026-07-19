@@ -12,9 +12,14 @@ use App\Http\Controllers\Api\PositionCriterionController;
 use App\Http\Controllers\Api\PositionFormController;
 use App\Http\Controllers\Api\PositionStatusController;
 use App\Http\Controllers\Api\StatusHistoryController;
+use App\Http\Controllers\Api\PositionScoringController;
+use App\Http\Controllers\Api\PositionRankingController;
+use App\Http\Controllers\Api\ApplicationScoreBreakdownController;
+use App\Http\Controllers\Api\AssignmentRunController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\RegisterController;
+
 use Illuminate\Support\Facades\Route;
 
 // ── Public ────────────────────────────────────────────────────────────────────
@@ -53,11 +58,21 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     // Phase 5: Application status management
     Route::patch('applications/{application}/status', ApplicationStatusController::class);
     Route::get('applications/{application}/status-history', StatusHistoryController::class);
+
+    // Phase 6: Admin scoring trigger
+    Route::post('positions/{position}/score', PositionScoringController::class);
 });
 
 // ── Director only ─────────────────────────────────────────────────────────────
 Route::middleware(['auth:sanctum', 'role:director'])->prefix('director')->group(function () {
     // Phase 2+ routes go here
+});
+// ── Shared Admin & Director routes ────────────────────────────────────────────
+Route::middleware(['auth:sanctum', 'role:admin,director'])->group(function () {
+    Route::get('positions/{position}/rankings', [PositionRankingController::class, 'index']);
+    Route::get('applications/{application}/score-breakdown', [ApplicationScoreBreakdownController::class, 'index']);
+    Route::post('assignment-runs', [AssignmentRunController::class, 'store']);
+    Route::get('assignment-runs/{assignmentRun}', [AssignmentRunController::class, 'show']);
 });
 
 // ── Applicant profile (internal & external) ───────────────────────────────────

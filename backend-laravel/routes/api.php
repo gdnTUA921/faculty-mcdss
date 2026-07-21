@@ -1,21 +1,23 @@
 <?php
 
 use App\Http\Controllers\Admin\StaffAccountController;
+use App\Http\Controllers\Api\ApplicantPoolController;
 use App\Http\Controllers\Api\ApplicantProfileController;
 use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\ApplicationResponseController;
+use App\Http\Controllers\Api\ApplicationScoreBreakdownController;
 use App\Http\Controllers\Api\ApplicationStatusController;
+use App\Http\Controllers\Api\AssignmentRunController;
 use App\Http\Controllers\Api\CriterionOptionController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\HiringRoundCloseController;
 use App\Http\Controllers\Api\PositionController;
 use App\Http\Controllers\Api\PositionCriterionController;
 use App\Http\Controllers\Api\PositionFormController;
+use App\Http\Controllers\Api\PositionRankingController;
+use App\Http\Controllers\Api\PositionScoringController;
 use App\Http\Controllers\Api\PositionStatusController;
 use App\Http\Controllers\Api\StatusHistoryController;
-use App\Http\Controllers\Api\PositionScoringController;
-use App\Http\Controllers\Api\PositionRankingController;
-use App\Http\Controllers\Api\ApplicationScoreBreakdownController;
-use App\Http\Controllers\Api\AssignmentRunController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -61,6 +63,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
     // Phase 6: Admin scoring trigger
     Route::post('positions/{position}/score', PositionScoringController::class);
+
+    // Phase 8: Round close & pool management
+    Route::post('hiring-rounds/{hiringRound}/close', HiringRoundCloseController::class);
 });
 
 // ── Director only ─────────────────────────────────────────────────────────────
@@ -73,6 +78,11 @@ Route::middleware(['auth:sanctum', 'role:admin,director'])->group(function () {
     Route::get('applications/{application}/score-breakdown', [ApplicationScoreBreakdownController::class, 'index']);
     Route::post('assignment-runs', [AssignmentRunController::class, 'store']);
     Route::get('assignment-runs/{assignmentRun}', [AssignmentRunController::class, 'show']);
+
+    // Phase 8: Applicant pool
+    Route::get('applicant-pool', [ApplicantPoolController::class, 'index']);
+    Route::post('applicant-pool/{applicantPool}/reengage', [ApplicantPoolController::class, 'reengage']);
+    Route::patch('applicant-pool/{applicantPool}/status', [ApplicantPoolController::class, 'updateStatus']);
 });
 
 // ── Applicant profile (internal & external) ───────────────────────────────────
@@ -96,4 +106,7 @@ Route::middleware(['auth:sanctum', 'role:internal_applicant,external_applicant']
 
     // Phase 5: Applicant-facing status view
     Route::get('/applicant/applications/{application}', [ApplicationController::class, 'show']);
+
+    // Phase 8: Applicant-facing pool status
+    Route::get('/applicant/pool-status', [ApplicantPoolController::class, 'myStatus']);
 });

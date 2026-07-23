@@ -23,12 +23,6 @@ class HiringRoundCloseController extends Controller
             ->whereIn('status', ['applied', 'for_interview', 'for_review', 'rejected', 'withdrawn'])
             ->get();
 
-        if ($unhiredApplications->isEmpty()) {
-            throw ValidationException::withMessages([
-                'hiring_round' => ['No unhired applications found in this hiring round.'],
-            ]);
-        }
-
         $created = 0;
 
         foreach ($unhiredApplications as $application) {

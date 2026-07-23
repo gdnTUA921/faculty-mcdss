@@ -25,6 +25,10 @@ class ApplicantPoolController extends Controller
             $query->where('hiring_round_id', $request->input('hiring_round_id'));
         }
 
+        if ($request->filled('semester')) {
+            $query->whereHas('hiringRound', fn ($q) => $q->where('semester', $request->input('semester')));
+        }
+
         if ($request->filled('position_id')) {
             $query->where('position_id', $request->input('position_id'));
         }

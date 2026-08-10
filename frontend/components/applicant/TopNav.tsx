@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/auth'
+import { initials } from '@/lib/format'
 import {
   FiHome,
   FiBriefcase,
@@ -21,6 +23,13 @@ const navItems = [
 
 export default function TopNav() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, logout } = useAuth()
+
+  async function handleSignOut() {
+    await logout()
+    router.replace('/')
+  }
 
   const isActive = (href: string) => pathname.startsWith(href)
 
@@ -72,17 +81,22 @@ export default function TopNav() {
               }
             >
               <div className="w-8 h-8 rounded-full bg-[#1E3A8A] flex items-center justify-center">
-                <span className="text-white text-xs font-bold">JD</span>
+                <span className="text-white text-xs font-bold">
+                  {initials(user?.first_name, user?.last_name)}
+                </span>
               </div>
-              <span className="hidden sm:inline text-sm font-medium text-[#1E293B]">Juan dela Cruz</span>
+              <span className="hidden sm:inline text-sm font-medium text-[#1E293B]">
+                {user ? `${user.first_name} ${user.last_name}` : '—'}
+              </span>
             </Link>
-            <Link
-              href="/"
+            <button
+              type="button"
+              onClick={handleSignOut}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#64748B] hover:text-[#DC2626] rounded-md"
             >
               <FiLogOut className="w-4 h-4" />
               <span className="hidden lg:inline">Sign Out</span>
-            </Link>
+            </button>
           </div>
         </div>
       </div>

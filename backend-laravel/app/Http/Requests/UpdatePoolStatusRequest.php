@@ -8,8 +8,8 @@ class UpdatePoolStatusRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        $user = $this->user();
-        return $user && in_array($user->role, ['admin', 'director'], true);
+        // Phase 10: directors are read-only, so pool mutation is admin-only.
+        return $this->user()?->role === 'admin';
     }
 
     public function rules(): array

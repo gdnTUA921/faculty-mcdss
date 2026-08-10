@@ -134,24 +134,59 @@ Response:
   "name": "Jane Marie Doe",
   "email": "jane.doe@example.com",
   "phone": "+1 (555) 123-4567",
+  "address": "12 Rizal Street, Quezon City, Philippines",
+  "linkedin": "https://linkedin.com/in/jane-doe",
+  "portfolio": "https://github.com/janedoe",
   "education": [
-    { "raw_text": "B.S. Computer Science, University of Example, 2022" }
+    {
+      "raw_text": "B.S. Computer Science, University of Example, 2022",
+      "degree": "B.S",
+      "field_of_study": "Computer Science",
+      "institution": "University of Example",
+      "graduation_year": "2022"
+    }
   ],
-  "work_experience": [
-    { "raw_text": "Software Engineer at Example Labs, Jan 2021 - Present" }
+  "experience": [
+    {
+      "raw_text": "Software Engineer at Example Labs, Jan 2021 - Present",
+      "position": "Software Engineer",
+      "organization": "Example Labs",
+      "start_date": "Jan 2021",
+      "end_date": "Present",
+      "responsibilities": ["Built the applicant scoring pipeline"],
+      "courses_taught": ["Data Structures", "Algorithms"]
+    }
   ],
   "certifications": [
-    { "raw_text": "AWS Certified Solutions Architect" }
+    {
+      "raw_text": "AWS Certified Solutions Architect, issued by Amazon, 2022, valid until 2025",
+      "name": "AWS Certified Solutions Architect",
+      "issuer": "Amazon",
+      "date_obtained": "2022",
+      "expiration_date": "2025"
+    }
   ],
+  "skills": ["Python", "SQL", "Curriculum Design"],
+  "research_interests": ["Machine Learning", "Educational Data Mining"],
   "publications": [
     { "raw_text": "Doe, J. (2024). Resume Parsing with Rules. Journal of Examples." }
+  ],
+  "research_projects": [
+    { "raw_text": "Adaptive Learning Platform (2023)" }
+  ],
+  "professional_development": [
+    { "raw_text": "Outcome-Based Education Workshop, 2021" }
+  ],
+  "awards": [
+    { "raw_text": "Outstanding Faculty Award, 2022" }
   ]
 }
 ```
 
 Notes:
 - The endpoint returns the parsed object directly so Laravel can store it in `applicant_profiles.parsed_resume_data`.
-- If a field is not found, the parser returns `null` for scalar fields and an empty list for sections.
+- Work, teaching, and academic experience are unified under `experience`; certifications and licenses are combined under `certifications`.
+- If a field is not found, the parser returns `null` for scalar fields and an empty list for sections. The parser is heuristic and never fabricates values — every structured field falls back to the entry's `raw_text` while unknown sub-fields stay `null`/empty.
 
 ## Integration Notes
 

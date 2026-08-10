@@ -21,6 +21,9 @@ class StorePositionRequest extends FormRequest
             'target_applicant_type' => ['required', 'in:external,internal,both'],
             'slots_available' => ['required', 'integer', 'min:1'],
             'status' => ['sometimes', 'in:open,closed,filled'],
+            // Was missing, so a deadline set at creation time was silently dropped —
+            // which is why every seeded position had a NULL application_deadline.
+            'application_deadline' => ['sometimes', 'nullable', 'date'],
         ];
     }
 

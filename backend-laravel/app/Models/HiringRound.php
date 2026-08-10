@@ -29,6 +29,7 @@ class HiringRound extends Model
             'academic_year' => 'integer',
             'start_date' => 'date',
             'end_date' => 'date',
+            'created_at' => 'datetime',
         ];
     }
 

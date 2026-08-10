@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { useAuth } from '@/lib/auth'
+import { initials } from '@/lib/format'
 import {
   FiHome,
   FiBriefcase,
@@ -10,19 +12,28 @@ import {
   FiLogOut,
   FiBookOpen,
   FiMenu,
+  FiBell,
 } from 'react-icons/fi'
 
 const navItems = [
   { label: 'Dashboard', href: '/director', icon: FiHome, exact: true },
   { label: 'Positions', href: '/director/positions', icon: FiBriefcase },
   { label: 'Assignment Results', href: '/director/assignment', icon: FiSliders },
+  { label: 'Notifications', href: '/director/notifications', icon: FiBell },
 ]
 
 const TRANSITION = 'transition-all duration-300 ease-in-out'
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, logout } = useAuth()
   const [isOpen, setIsOpen] = useState(true)
+
+  async function handleSignOut() {
+    await logout()
+    router.replace('/')
+  }
 
   const isActive = (href: string, exact?: boolean) => {
     if (exact) return pathname === href
@@ -125,21 +136,26 @@ export default function Sidebar() {
           }`}
         >
           <div className="w-9 h-9 rounded-full bg-[#2563EB] flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-semibold text-sm">MR</span>
+            <span className="text-white font-semibold text-sm">
+              {initials(user?.first_name, user?.last_name)}
+            </span>
           </div>
           <div
             className={`min-w-0 overflow-hidden ${TRANSITION} ${
               isOpen ? 'opacity-100 max-w-full flex-1' : 'opacity-0 max-w-0 flex-none'
             }`}
           >
-            <p className="text-white text-sm font-medium whitespace-nowrap">Prof. Maria Reyes</p>
+            <p className="text-white text-sm font-medium whitespace-nowrap truncate">
+              {user ? `${user.first_name} ${user.last_name}` : '—'}
+            </p>
             <p className="text-blue-300 text-xs whitespace-nowrap">Academic Director</p>
           </div>
         </div>
-        <Link
-          href="/"
+        <button
+          type="button"
+          onClick={handleSignOut}
           title={!isOpen ? 'Sign Out' : undefined}
-          className={`flex items-center text-blue-300 hover:text-white text-xs transition-colors py-1.5 rounded-md hover:bg-blue-800 overflow-hidden ${
+          className={`w-full flex items-center text-blue-300 hover:text-white text-xs transition-colors py-1.5 rounded-md hover:bg-blue-800 overflow-hidden ${
             isOpen ? 'gap-3 px-2' : 'gap-0 px-0 justify-center'
           }`}
         >
@@ -151,7 +167,7 @@ export default function Sidebar() {
           >
             Sign Out
           </span>
-        </Link>
+        </button>
       </div>
     </aside>
   )

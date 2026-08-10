@@ -86,25 +86,54 @@ SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "education": (
         "education",
         "educational background",
+        "educational attainment",
         "academic background",
         "academic qualifications",
         "qualifications",
     ),
-    "work_experience": (
+    # Work, teaching, and academic experience are intentionally folded into one
+    # unified "experience" section per the recruitment requirements.
+    "experience": (
+        "experience",
         "work experience",
         "professional experience",
-        "experience",
         "employment history",
+        "employment record",
         "work history",
         "career history",
+        "teaching experience",
+        "academic experience",
+        "academic appointments",
+        "professional background",
     ),
+    # Certifications and licenses share a single section.
     "certifications": (
         "certifications",
         "certificates",
         "licenses",
+        "licences",
         "licensure",
+        "certifications and licenses",
+        "certifications & licenses",
+        "licenses and certifications",
+        "licenses & certifications",
         "professional certifications",
-        "training",
+        "professional licenses",
+    ),
+    "skills": (
+        "skills",
+        "technical skills",
+        "core competencies",
+        "competencies",
+        "areas of expertise",
+        "key skills",
+        "skill set",
+    ),
+    "research_interests": (
+        "research interests",
+        "areas of research",
+        "research focus",
+        "research areas",
     ),
     "publications": (
         "publications",
@@ -112,6 +141,38 @@ SECTION_ALIASES: dict[str, tuple[str, ...]] = {
         "research publications",
         "papers",
         "journal publications",
+    ),
+    "research_projects": (
+        "research projects",
+        "projects",
+        "research grants",
+        "grants",
+        "funded research",
+    ),
+    "professional_development": (
+        "professional development",
+        "trainings",
+        "training",
+        "seminars",
+        "workshops",
+        "seminars and workshops",
+        "seminars & workshops",
+        "trainings and seminars",
+        "workshops attended",
+        "continuing education",
+    ),
+    "awards": (
+        "awards",
+        "honors",
+        "honours",
+        "awards and honors",
+        "awards & honors",
+        "honors and awards",
+        "honours and awards",
+        "awards and recognition",
+        "achievements",
+        "recognitions",
+        "distinctions",
     ),
 }
 
@@ -124,19 +185,111 @@ DATE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
+DATE_RANGE_PATTERN = re.compile(
+    r"(?:present|current|(?:19|20)\d{2})\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})",
+    re.IGNORECASE,
+)
+SINGLE_DATE_PATTERN = re.compile(
+    r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{4}|\b(?:19|20)\d{2}\b",
+    re.IGNORECASE,
+)
+BULLET_PREFIX = re.compile(r"^(?:[\-\*••]|\d+[.)])\s+")
+
+LINKEDIN_PATTERN = re.compile(r"(?:https?://)?(?:www\.)?linkedin\.com/[^\s,)\]]+", re.IGNORECASE)
+GITHUB_PATTERN = re.compile(r"(?:https?://)?(?:www\.)?github\.com/[^\s,)\]]+", re.IGNORECASE)
+URL_PATTERN = re.compile(r"(?:https?://|www\.)[^\s,)\]]+", re.IGNORECASE)
+
+ADDRESS_LABEL_PATTERN = re.compile(
+    r"^\s*(?:address|location|permanent address|home address|residence)\s*[:\-]\s*(.+)$",
+    re.IGNORECASE,
+)
+ADDRESS_HINT_PATTERN = re.compile(
+    r"\b(?:street|st\.|ave\.?|avenue|road|rd\.|blvd\.?|boulevard|barangay|brgy\.?|"
+    r"subdivision|subd\.?|city|province|zip|postal|philippines)\b",
+    re.IGNORECASE,
+)
+
+DEGREE_PATTERN = re.compile(
+    r"\b(?:"
+    r"ph\.?\s?d|doctor(?:ate)?|d\.?phil|ed\.?d|dba|d\.?sc"
+    r"|master|m\.?s\.?c?|m\.?a|mba|m\.?eng|m\.?phil|msc|m\.?b\.?a"
+    r"|bachelor|b\.?s\.?c?|b\.?a|b\.?eng|bsc|ab"
+    r"|associate|diploma"
+    r")\b"
+    r"(?:\s+of\s+(?:science|arts|engineering|business(?:\s+administration)?|education|"
+    r"laws?|philosophy|technology|[A-Za-z]+))?",
+    re.IGNORECASE,
+)
+FIELD_IN_PATTERN = re.compile(
+    r"\bin\s+([A-Za-z][A-Za-z&/\-. ]{2,60}?)(?:,|;|\.|\||\(|\bat\b|$)",
+    re.IGNORECASE,
+)
+INSTITUTION_PATTERN = re.compile(
+    r"\b(?:University|College|Institute|Polytechnic|Academy|Seminary|Conservatory|School)\b",
+    re.IGNORECASE,
+)
+
+COURSES_LABEL_PATTERN = re.compile(r"courses?\s+taught\s*[:\-]?\s*(.+)", re.IGNORECASE)
+CERT_ISSUER_PATTERN = re.compile(
+    r"\b(?:issued\s+by|offered\s+by|by|from|through)\b\s+([A-Z][A-Za-z0-9&.,'\- ]{2,60})",
+    re.IGNORECASE,
+)
+CERT_EXPIRY_PATTERN = re.compile(
+    r"(?:exp(?:ires?|iry|iration)?|valid\s+(?:until|through|thru)|until)\s*[:\-]?\s*"
+    r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{4}|(?:19|20)\d{2})",
+    re.IGNORECASE,
+)
+
 
 class ResumeEntry(BaseModel):
     raw_text: str
+
+
+class EducationEntry(BaseModel):
+    raw_text: str
+    degree: str | None = None
+    field_of_study: str | None = None
+    institution: str | None = None
+    graduation_year: str | None = None
+
+
+class ExperienceEntry(BaseModel):
+    raw_text: str
+    position: str | None = None
+    organization: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    responsibilities: list[str] = Field(default_factory=list)
+    courses_taught: list[str] = Field(default_factory=list)
+
+
+class CertificationEntry(BaseModel):
+    raw_text: str
+    name: str | None = None
+    issuer: str | None = None
+    date_obtained: str | None = None
+    expiration_date: str | None = None
 
 
 class ParsedResumeData(BaseModel):
     name: str | None = None
     email: str | None = None
     phone: str | None = None
-    education: list[ResumeEntry] = Field(default_factory=list)
-    work_experience: list[ResumeEntry] = Field(default_factory=list)
-    certifications: list[ResumeEntry] = Field(default_factory=list)
+    address: str | None = None
+    linkedin: str | None = None
+    portfolio: str | None = None
+    education: list[EducationEntry] = Field(default_factory=list)
+    # Unified Work + Teaching + Academic experience.
+    experience: list[ExperienceEntry] = Field(default_factory=list)
+    # Combined certifications and licenses.
+    certifications: list[CertificationEntry] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    research_interests: list[str] = Field(default_factory=list)
     publications: list[ResumeEntry] = Field(default_factory=list)
+    research_projects: list[ResumeEntry] = Field(default_factory=list)
+    professional_development: list[ResumeEntry] = Field(default_factory=list)
+    awards: list[ResumeEntry] = Field(default_factory=list)
 
 
 def normalize_text(value: str) -> str:
@@ -258,16 +411,278 @@ def parse_section_entries(section_texts: list[str]) -> list[ResumeEntry]:
     return entries
 
 
+def parse_term_list(section_texts: list[str]) -> list[str]:
+    """Flatten a section into de-duplicated short terms (skills, research interests)."""
+    terms: list[str] = []
+    for entry in parse_section_entries(section_texts):
+        for piece in re.split(r"[;,••|]|\s{2,}|\s/\s", entry.raw_text):
+            term = normalize_text(piece)
+            if term and len(term) <= 80:
+                terms.append(term)
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for term in terms:
+        key = term.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(term)
+    return unique
+
+
+def extract_address(text: str) -> str | None:
+    lines = [line.strip() for line in text.splitlines()[:20] if line.strip()]
+    for line in lines:
+        labelled = ADDRESS_LABEL_PATTERN.match(line)
+        if labelled:
+            return normalize_text(labelled.group(1))
+    for line in lines:
+        cleaned = normalize_text(line)
+        if looks_like_contact_line(cleaned) or is_section_heading(cleaned):
+            continue
+        if ADDRESS_HINT_PATTERN.search(cleaned) and "," in cleaned:
+            return cleaned
+    return None
+
+
+def _normalize_url(url: str) -> str:
+    return url if url.lower().startswith("http") else "https://" + url
+
+
+def extract_linkedin(text: str) -> str | None:
+    match = LINKEDIN_PATTERN.search(text)
+    return _normalize_url(match.group(0)) if match else None
+
+
+def extract_portfolio(text: str) -> str | None:
+    github = GITHUB_PATTERN.search(text)
+    if github:
+        return _normalize_url(github.group(0))
+    for candidate in URL_PATTERN.finditer(text):
+        url = candidate.group(0)
+        if "linkedin.com" in url.lower():
+            continue
+        return _normalize_url(url)
+    return None
+
+
+def extract_last_year(text: str) -> str | None:
+    years = YEAR_PATTERN.findall(text)
+    return years[-1] if years else None
+
+
+def _is_institution(text: str) -> bool:
+    return bool(INSTITUTION_PATTERN.search(text))
+
+
+def extract_institution(text: str) -> str | None:
+    for segment in re.split(r"\s*[,|]\s*|\s+at\s+", text):
+        segment = segment.strip()
+        if _is_institution(segment):
+            return normalize_text(segment)
+    return None
+
+
+def extract_degree(text: str) -> str | None:
+    match = DEGREE_PATTERN.search(text)
+    return normalize_text(match.group(0)) if match else None
+
+
+def extract_field_of_study(text: str) -> str | None:
+    explicit = FIELD_IN_PATTERN.search(text)
+    if explicit:
+        candidate = normalize_text(explicit.group(1))
+        if candidate and not _is_institution(candidate):
+            return candidate
+
+    # Fallback: the first comma-segment with the degree token stripped off, e.g.
+    # "B.S. Computer Science, ..." -> "Computer Science".
+    first_segment = normalize_text(re.split(r"[,|]", text)[0])
+    degree = extract_degree(first_segment)
+    if degree:
+        remainder = re.sub(re.escape(degree), "", first_segment, count=1, flags=re.IGNORECASE)
+        remainder = normalize_text(remainder.strip(" ,.-"))
+        if remainder and not _is_institution(remainder) and any(c.isalpha() for c in remainder):
+            return remainder
+    return None
+
+
+def parse_education_entry(text: str) -> EducationEntry:
+    return EducationEntry(
+        raw_text=text,
+        degree=extract_degree(text),
+        field_of_study=extract_field_of_study(text),
+        institution=extract_institution(text),
+        graduation_year=extract_last_year(text),
+    )
+
+
+def parse_certification_entry(text: str) -> CertificationEntry:
+    expiration = None
+    expiry_match = CERT_EXPIRY_PATTERN.search(text)
+    if expiry_match:
+        expiration = normalize_text(expiry_match.group(1))
+
+    issuer = None
+    issuer_match = CERT_ISSUER_PATTERN.search(text)
+    if issuer_match:
+        issuer = normalize_text(issuer_match.group(1)).rstrip(".,")
+
+    date_obtained = None
+    for date_match in SINGLE_DATE_PATTERN.finditer(text):
+        value = normalize_text(date_match.group(0))
+        if expiration and value == expiration:
+            continue
+        date_obtained = value
+        break
+
+    name_segment = re.split(r"\s+[–—\-]\s+|,|\(", text, maxsplit=1)[0]
+    name = normalize_text(name_segment) or None
+    if name and SINGLE_DATE_PATTERN.fullmatch(name):
+        name = None
+
+    return CertificationEntry(
+        raw_text=text,
+        name=name,
+        issuer=issuer,
+        date_obtained=date_obtained,
+        expiration_date=expiration,
+    )
+
+
+def split_dates(date_text: str) -> tuple[str | None, str | None]:
+    parts = re.split(r"\s*(?:-|–|—|\bto\b)\s*", date_text, maxsplit=1, flags=re.IGNORECASE)
+    start = normalize_text(parts[0]) if parts and parts[0].strip() else None
+    end = normalize_text(parts[1]) if len(parts) > 1 and parts[1].strip() else None
+    return start, end
+
+
+def parse_experience_header(header: str) -> tuple[str | None, str | None, str | None, str | None]:
+    start = end = None
+    core = header
+    date_match = DATE_PATTERN.search(header)
+    if date_match:
+        start, end = split_dates(date_match.group(0))
+        core = header[: date_match.start()] + " " + header[date_match.end() :]
+
+    core = normalize_text(core.strip(" ,-–—|()"))
+    position = organization = None
+    if core:
+        pieces = re.split(r"\s+at\s+|\s+[–—]\s+|\s+-\s+|\s+\|\s+|,\s+", core, maxsplit=1)
+        position = normalize_text(pieces[0]) or None
+        if len(pieces) > 1:
+            organization = normalize_text(pieces[1]).strip(" ,-–—|()") or None
+    return position, organization, start, end
+
+
+def extract_courses_taught(header: str, details: list[str]) -> list[str]:
+    courses: list[str] = []
+    for source in [header, *details]:
+        match = COURSES_LABEL_PATTERN.search(source)
+        if not match:
+            continue
+        for piece in re.split(r"[;,]", match.group(1)):
+            course = normalize_text(piece)
+            if course:
+                courses.append(course)
+    return courses
+
+
+def _looks_like_experience_header(text: str) -> bool:
+    """A new job/appointment line usually carries a date range or an employer."""
+    if DATE_RANGE_PATTERN.search(text):
+        return True
+    if re.search(r"\bat\s+[A-Z]", text):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:Inc|Corp|Corporation|Ltd|LLC|LLP|University|College|Institute|Company|Department|School)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _records_from_text(section_text, is_new_record=None):
+    """Group a header line with the bullet/detail lines that follow it.
+
+    Handles the two common resume layouts: a non-bulleted header followed by
+    bulleted responsibilities, and an all-bulleted list where each job line is
+    itself a header (detected via ``is_new_record``).
+    """
+    records: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    for raw_line in section_text.replace("\r\n", "\n").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            current = None
+            continue
+        is_bullet = bool(BULLET_PREFIX.match(line))
+        content = normalize_text(BULLET_PREFIX.sub("", line))
+        if not content:
+            continue
+
+        attach_as_detail = (
+            is_bullet
+            and current is not None
+            and not (is_new_record is not None and is_new_record(content))
+        )
+        if attach_as_detail:
+            current["details"].append(content)  # type: ignore[union-attr]
+        else:
+            current = {"header": content, "details": []}
+            records.append(current)
+    return records
+
+
+def parse_experience_records(section_texts: list[str]) -> list[ExperienceEntry]:
+    entries: list[ExperienceEntry] = []
+    for section_text in section_texts:
+        for record in _records_from_text(section_text, _looks_like_experience_header):
+            header = str(record["header"])
+            details = list(record["details"])  # type: ignore[arg-type]
+            position, organization, start_date, end_date = parse_experience_header(header)
+            courses = extract_courses_taught(header, details)
+            responsibilities = [detail for detail in details if not COURSES_LABEL_PATTERN.search(detail)]
+            raw_text = normalize_text(" ".join([header, *details])) if details else header
+            entries.append(
+                ExperienceEntry(
+                    raw_text=raw_text,
+                    position=position,
+                    organization=organization,
+                    start_date=start_date,
+                    end_date=end_date,
+                    responsibilities=responsibilities,
+                    courses_taught=courses,
+                )
+            )
+    return entries
+
+
 def extract_resume_data(text: str) -> ParsedResumeData:
     sections = extract_resume_sections(text)
     return ParsedResumeData(
         name=extract_name(text),
         email=extract_email(text),
         phone=extract_phone(text),
-        education=parse_section_entries(sections["education"]),
-        work_experience=parse_section_entries(sections["work_experience"]),
-        certifications=parse_section_entries(sections["certifications"]),
+        address=extract_address(text),
+        linkedin=extract_linkedin(text),
+        portfolio=extract_portfolio(text),
+        education=[
+            parse_education_entry(entry.raw_text)
+            for entry in parse_section_entries(sections["education"])
+        ],
+        experience=parse_experience_records(sections["experience"]),
+        certifications=[
+            parse_certification_entry(entry.raw_text)
+            for entry in parse_section_entries(sections["certifications"])
+        ],
+        skills=parse_term_list(sections["skills"]),
+        research_interests=parse_term_list(sections["research_interests"]),
         publications=parse_section_entries(sections["publications"]),
+        research_projects=parse_section_entries(sections["research_projects"]),
+        professional_development=parse_section_entries(sections["professional_development"]),
+        awards=parse_section_entries(sections["awards"]),
     )
 
 

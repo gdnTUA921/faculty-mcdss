@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PoolInvitation;
 use App\Models\Application;
 use App\Models\ApplicantPool;
 use App\Models\HiringRound;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 
@@ -39,6 +41,15 @@ class HiringRoundCloseController extends Controller
 
             if ($poolEntry->wasRecentlyCreated) {
                 $created++;
+
+                NotificationService::dispatch(
+                    $application->applicantProfile->user,
+                    'pool_invitation',
+                    "You've Been Added to Our Applicant Pool",
+                    "You've been added to the applicant pool for {$application->position->title} after the {$hiringRound->name} round closed.",
+                    new PoolInvitation($application->position->title, $hiringRound->name),
+                    $application->id,
+                );
             }
 
             $application->update([

@@ -18,13 +18,7 @@ class PositionStatusController extends Controller
         $validated = $request->validated();
 
         if ($validated['status'] === 'open') {
-            $totalWeight = (float) $position->criteria()->sum('weight');
-
-            if (abs($totalWeight - 1.0) > 0.0001) {
-                throw ValidationException::withMessages([
-                    'status' => ['Position weights must total 1.0 before opening.'],
-                ]);
-            }
+            $this->ensurePositionCanOpen($position);
         }
 
         $position->update(['status' => $validated['status']]);

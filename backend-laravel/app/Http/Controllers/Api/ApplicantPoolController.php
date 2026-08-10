@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdatePoolStatusRequest;
+use App\Mail\ReengagementEmail;
 use App\Models\ApplicantPool;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -94,6 +96,16 @@ class ApplicantPoolController extends Controller
             'reengagement_sent_at'    => now(),
             'status'                  => 'reengaged',
         ]);
+
+        $applicantPool->load(['applicantProfile.user', 'position', 'hiringRound']);
+
+        NotificationService::dispatch(
+            $applicantPool->applicantProfile->user,
+            'reengagement',
+            'A New Opportunity Awaits',
+            "We're reaching out about a new hiring round related to your previous application for {$applicantPool->position->title}.",
+            new ReengagementEmail($applicantPool->position->title, $applicantPool->hiringRound->name),
+        );
 
         return response()->json([
             'message' => 'Re-engagement email marked as sent.',

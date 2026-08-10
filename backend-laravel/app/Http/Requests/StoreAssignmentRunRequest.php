@@ -9,7 +9,8 @@ class StoreAssignmentRunRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return in_array($this->user()?->role, ['admin', 'director'], true);
+        // Phase 10: directors are read-only, so triggering a solver run is admin-only.
+        return $this->user()?->role === 'admin';
     }
 
     public function rules(): array

@@ -245,12 +245,20 @@ CREATE TABLE documents (
     file_size_bytes         BIGINT          NOT NULL CHECK (file_size_bytes > 0),
     is_verified             BOOLEAN         NOT NULL DEFAULT FALSE,
     uploaded_at             TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    uploaded_by             UUID            REFERENCES users (id) ON DELETE SET NULL
+    uploaded_by             UUID            REFERENCES users (id) ON DELETE SET NULL,
+    verified_by             UUID            REFERENCES users (id) ON DELETE SET NULL,
+    verified_at             TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT chk_documents_verification CHECK (
+        (is_verified = FALSE AND verified_at IS NULL)
+        OR (is_verified = TRUE AND verified_at IS NOT NULL)
+    )
 );
 
 COMMENT ON TABLE  documents                  IS 'Centralised document repository. Profile-level docs persist across rounds; application_id is optional for submission-specific docs.';
 COMMENT ON COLUMN documents.document_type    IS 'E.g. transcript, certificate, government_id, employment_record, publication.';
-COMMENT ON COLUMN documents.is_verified      IS 'HR/admin document review flag.';
+COMMENT ON COLUMN documents.is_verified      IS 'HR/admin document review flag. Set via PATCH /api/documents/{id}/verify (admin only).';
+COMMENT ON COLUMN documents.verified_by      IS 'Admin who signed off on the credential. NULL while unverified.';
+COMMENT ON COLUMN documents.verified_at      IS 'When the credential was verified. NULL while unverified.';
 
 
 -- =============================================================================
@@ -552,6 +560,8 @@ SELECT
     a.id                                        AS application_id,
     ap.id                                       AS applicant_profile_id,
     u.first_name || ' ' || u.last_name          AS applicant_name,
+    u.first_name                                 AS first_name,
+    u.last_name                                  AS last_name,
     ap.applicant_type,
     p.id                                        AS position_id,
     p.title                                     AS position_title,

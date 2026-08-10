@@ -4,19 +4,25 @@
 namespace App\Http\Controllers\Api;
 
 
+use App\Http\Controllers\Concerns\ScopesToDirector;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCriterionRequest;
 use App\Http\Requests\UpdateCriterionRequest;
 use App\Models\Criterion;
 use App\Models\Position;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 
 class PositionCriterionController extends Controller
 {
-    public function index(Position $position): JsonResponse
+    use ScopesToDirector;
+
+    public function index(Request $request, Position $position): JsonResponse
     {
+        $this->assertDepartmentAccess($request->user(), $position->department_id);
+
         return response()->json($position->criteria()->with('options')->get());
     }
 

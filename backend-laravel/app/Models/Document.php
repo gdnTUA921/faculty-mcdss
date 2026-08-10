@@ -23,6 +23,8 @@ class Document extends Model
         'is_verified',
         'uploaded_at',
         'uploaded_by',
+        'verified_by',
+        'verified_at',
     ];
 
     protected function casts(): array
@@ -31,6 +33,7 @@ class Document extends Model
             'file_size_bytes' => 'integer',
             'is_verified' => 'boolean',
             'uploaded_at' => 'datetime',
+            'verified_at' => 'datetime',
         ];
     }
 
@@ -47,5 +50,10 @@ class Document extends Model
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 }

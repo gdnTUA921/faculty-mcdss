@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import {
   FiMail,
   FiLock,
@@ -9,44 +10,48 @@ import {
   FiUsers,
   FiShield,
   FiZap,
-  FiCheckCircle,
+  FiAlertCircle,
   FiEye,
   FiEyeOff,
-  FiUser,
-  FiBookOpen,
 } from 'react-icons/fi'
-
-type Role = 'admin' | 'director' | 'applicant'
-
-const demoAccounts: Record<Role, { email: string; password: string; redirect: string; label: string; sub: string }> = {
-  admin: {
-    email: 'admin@university.edu.ph',
-    password: 'demo1234',
-    redirect: '/admin',
-    label: 'Admin User',
-    sub: 'HR Personnel',
-  },
-  director: {
-    email: 'maria.reyes@university.edu.ph',
-    password: 'demo1234',
-    redirect: '/director',
-    label: 'Prof. Maria Reyes',
-    sub: 'Academic Director — DIT',
-  },
-  applicant: {
-    email: 'juan.delacruz@email.com',
-    password: 'demo1234',
-    redirect: '/applicant/dashboard',
-    label: 'Juan dela Cruz',
-    sub: 'External Applicant',
-  },
-}
+import { ApiError } from '@/lib/api/client'
+import { FullPageSpinner, HOME_FOR_ROLE, useAuth } from '@/lib/auth'
 
 export default function LoginPage() {
-  const [showPassword, setShowPassword] = useState(false)
-  const [role, setRole] = useState<Role>('applicant')
+  const router = useRouter()
+  const { user, loading, login } = useAuth()
 
-  const account = demoAccounts[role]
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Already signed in — skip the form and go straight to the right dashboard.
+  useEffect(() => {
+    if (!loading && user) router.replace(HOME_FOR_ROLE[user.role])
+  }, [user, loading, router])
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setError(null)
+    setSubmitting(true)
+
+    try {
+      const signedIn = await login(email.trim(), password)
+      router.replace(HOME_FOR_ROLE[signedIn.role])
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // 422 puts the reason under errors.email; 403 means a deactivated account.
+        setError(err.fieldError('email') ?? err.message)
+      } else {
+        setError('Could not reach the server. Is the API running on port 8000?')
+      }
+      setSubmitting(false)
+    }
+  }
+
+  if (loading || user) return <FullPageSpinner />
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
@@ -105,78 +110,63 @@ export default function LoginPage() {
               Sign in to your account
             </h2>
             <p className="text-sm text-[#64748B]">
-              Choose a role below to preview the corresponding interface.
+              Your dashboard is selected automatically based on your role.
             </p>
           </div>
 
-          {/* Role Selector — Demo */}
-          <div className="mb-6">
-            <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2">
-              Demo Role
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <RoleCard
-                active={role === 'admin'}
-                onClick={() => setRole('admin')}
-                icon={FiShield}
-                label="Admin / HR"
-              />
-              <RoleCard
-                active={role === 'director'}
-                onClick={() => setRole('director')}
-                icon={FiBookOpen}
-                label="Director"
-              />
-              <RoleCard
-                active={role === 'applicant'}
-                onClick={() => setRole('applicant')}
-                icon={FiUser}
-                label="Applicant"
-              />
+          {error && (
+            <div className="flex items-start gap-2.5 px-4 py-3 mb-5 bg-red-50 border border-red-200 rounded-lg">
+              <FiAlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-800">{error}</p>
             </div>
-            <div className="mt-2 px-3 py-2 bg-[#F8FAFF] border border-[#E2E8F0] rounded-md">
-              <p className="text-xs text-[#64748B]">
-                Signing in as: <span className="font-semibold text-[#1E293B]">{account.label}</span>
-                <span className="text-[#94A3B8]"> · {account.sub}</span>
-              </p>
-            </div>
-          </div>
+          )}
 
-          <form className="space-y-4">
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-xs font-semibold text-[#1E293B] uppercase tracking-wide mb-1.5">
+              <label
+                htmlFor="email"
+                className="block text-xs font-semibold text-[#1E293B] uppercase tracking-wide mb-1.5"
+              >
                 Email Address
               </label>
               <div className="relative">
                 <FiMail className="w-4 h-4 text-[#64748B] absolute left-3.5 top-3.5" />
                 <input
-                  key={`email-${role}`}
+                  id="email"
+                  name="email"
                   type="email"
-                  defaultValue={account.email}
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@university.edu.ph"
                   className="w-full pl-10 pr-3 py-3 bg-white border border-[#E2E8F0] rounded-lg text-sm text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent"
                 />
               </div>
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-[#1E293B] uppercase tracking-wide">
-                  Password
-                </label>
-                <a href="#" className="text-xs text-[#2563EB] hover:underline font-medium">
-                  Forgot password?
-                </a>
-              </div>
+              <label
+                htmlFor="password"
+                className="block text-xs font-semibold text-[#1E293B] uppercase tracking-wide mb-1.5"
+              >
+                Password
+              </label>
               <div className="relative">
                 <FiLock className="w-4 h-4 text-[#64748B] absolute left-3.5 top-3.5" />
                 <input
-                  key={`pw-${role}`}
+                  id="password"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
-                  defaultValue={account.password}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-10 py-3 bg-white border border-[#E2E8F0] rounded-lg text-sm text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent"
                 />
                 <button
                   type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-3 text-[#64748B] hover:text-[#1E293B]"
                 >
@@ -185,40 +175,39 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <Link
-              href={account.redirect}
-              className="flex items-center justify-center gap-2 w-full bg-[#2563EB] text-white px-4 py-3 rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors"
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 w-full bg-[#2563EB] text-white px-4 py-3 rounded-lg text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Sign In as {role === 'admin' ? 'Admin' : role === 'director' ? 'Director' : 'Applicant'}
-              <FiArrowRight className="w-4 h-4" />
-            </Link>
+              {submitting ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Signing in…
+                </>
+              ) : (
+                <>
+                  Sign In
+                  <FiArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
           </form>
 
-          {role === 'applicant' && (
-            <>
-              <div className="flex items-center gap-3 my-6">
-                <div className="flex-1 h-px bg-[#E2E8F0]" />
-                <p className="text-xs text-[#64748B] uppercase tracking-wide">Or</p>
-                <div className="flex-1 h-px bg-[#E2E8F0]" />
-              </div>
+          <div className="flex items-center gap-3 my-6">
+            <div className="flex-1 h-px bg-[#E2E8F0]" />
+            <p className="text-xs text-[#64748B] uppercase tracking-wide">Or</p>
+            <div className="flex-1 h-px bg-[#E2E8F0]" />
+          </div>
 
-              <div className="text-center">
-                <p className="text-sm text-[#64748B] mb-3">Don&apos;t have an account?</p>
-                <Link
-                  href="/register"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 border-2 border-[#2563EB] text-[#2563EB] rounded-lg text-sm font-semibold hover:bg-[#DBEAFE] transition-colors"
-                >
-                  Register as External Applicant
-                </Link>
-              </div>
-            </>
-          )}
-
-          <div className="mt-6 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2.5">
-            <FiCheckCircle className="w-4 h-4 text-[#2563EB] mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-[#1E3A8A]">
-              <span className="font-semibold">Frontend demo mode:</span> No real authentication. Switch roles above to preview the three interfaces.
-            </p>
+          <div className="text-center">
+            <p className="text-sm text-[#64748B] mb-3">Don&apos;t have an account?</p>
+            <Link
+              href="/register"
+              className="inline-flex items-center gap-2 px-5 py-2.5 border-2 border-[#2563EB] text-[#2563EB] rounded-lg text-sm font-semibold hover:bg-[#DBEAFE] transition-colors"
+            >
+              Register as External Applicant
+            </Link>
           </div>
         </div>
       </div>
@@ -245,32 +234,5 @@ function FeatureBullet({
         <p className="text-blue-200 text-xs leading-relaxed">{desc}</p>
       </div>
     </div>
-  )
-}
-
-function RoleCard({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  active: boolean
-  onClick: () => void
-  icon: typeof FiUser
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        active
-          ? 'flex flex-col items-center gap-1.5 px-2 py-3 rounded-lg border-2 border-[#2563EB] bg-[#DBEAFE] text-[#1E3A8A] transition-all'
-          : 'flex flex-col items-center gap-1.5 px-2 py-3 rounded-lg border-2 border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#94A3B8] hover:text-[#1E293B] transition-all'
-      }
-    >
-      <Icon className="w-5 h-5" />
-      <span className="text-xs font-semibold">{label}</span>
-    </button>
   )
 }

@@ -5,15 +5,67 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreApplicationRequest;
 use App\Http\Requests\UpdateApplicationRequest;
+use App\Mail\ApplicationReceived;
 use App\Models\Application;
 use App\Models\ApplicationFormResponse;
 use App\Models\HiringRound;
+use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class ApplicationController extends Controller
 {
+    /**
+     * The signed-in applicant's own applications, drafts included —
+     * the portal needs drafts so an unfinished application can be resumed.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $applicantProfile = $request->user()->applicantProfile;
+
+        if (! $applicantProfile) {
+            return response()->json(['data' => []]);
+        }
+
+        $applications = Application::where('applicant_profile_id', $applicantProfile->id)
+            ->with([
+                'position:id,title,department_id,application_deadline',
+                'position.department:id,name,code',
+                'hiringRound:id,name,semester,academic_year',
+            ])
+            ->withCount('documents')
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
+            ->orderByDesc('applied_at')
+            ->get()
+            ->map(fn ($application) => [
+                'id'       => $application->id,
+                'position' => $application->position ? [
+                    'id'                   => $application->position->id,
+                    'title'                => $application->position->title,
+                    'application_deadline' => $application->position->application_deadline?->toDateString(),
+                    'department'           => $application->position->department ? [
+                        'id'   => $application->position->department->id,
+                        'name' => $application->position->department->name,
+                        'code' => $application->position->department->code,
+                    ] : null,
+                ] : null,
+                'hiring_round' => $application->hiringRound ? [
+                    'id'            => $application->hiringRound->id,
+                    'name'          => $application->hiringRound->name,
+                    'semester'      => $application->hiringRound->semester,
+                    'academic_year' => $application->hiringRound->academic_year,
+                ] : null,
+                'status'            => $application->status,
+                'documents_count'   => $application->documents_count,
+                'applied_at'        => $application->applied_at?->toIso8601String(),
+                'status_updated_at' => $application->status_updated_at?->toIso8601String(),
+            ]);
+
+        return response()->json(['data' => $applications]);
+    }
+
     public function store(StoreApplicationRequest $request): JsonResponse
     {
         $applicantProfile = $request->user()->applicantProfile;
@@ -120,6 +172,43 @@ class ApplicationController extends Controller
             'applied_at' => now(),
         ]);
 
+        $applicantUser = $applicantProfile->user;
+        NotificationService::dispatch(
+            $applicantUser,
+            'application_received',
+            'Application Received',
+            "Your application for {$position->title} has been received.",
+            new ApplicationReceived($applicantUser->first_name . ' ' . $applicantUser->last_name, $position->title),
+            $application->id,
+        );
+
+        $director = $position->department?->director;
+
+        if ($director) {
+            // In-app only: no Mailable, so this doesn't add to the director's inbox
+            // on top of the applicant-facing emails already sent per submission.
+            NotificationService::dispatch(
+                $director,
+                'application_submitted',
+                'New Application Submitted',
+                "{$applicantUser->first_name} {$applicantUser->last_name} applied for {$position->title}.",
+                null,
+                $application->id,
+            );
+        }
+
+        // Admins are the only ones who can actually move an application through
+        // the pipeline (PATCH .../status is role:admin only), so they need this
+        // signal at least as much as the director does. Bulk-inserted so the
+        // admin count never adds per-recipient round trips to this request.
+        NotificationService::dispatchInAppToMany(
+            User::where('role', 'admin')->get(),
+            'application_submitted',
+            'New Application Submitted',
+            "{$applicantUser->first_name} {$applicantUser->last_name} applied for {$position->title}.",
+            $application->id,
+        );
+
         return response()->json([
             'message' => 'Application submitted successfully.',
             'data' => $application->fresh(),
@@ -151,6 +240,16 @@ class ApplicationController extends Controller
                     'id'   => $application->hiringRound->id,
                     'name' => $application->hiringRound->name,
                 ],
+                // Additive for Phase 10: the portal status tracker renders the trail.
+                'status_history'     => $application->statusHistory()
+                    ->orderByDesc('changed_at')
+                    ->get()
+                    ->map(fn ($entry) => [
+                        'id'              => $entry->id,
+                        'previous_status' => $entry->previous_status,
+                        'new_status'      => $entry->new_status,
+                        'changed_at'      => $entry->changed_at?->toIso8601String(),
+                    ])->values(),
             ],
         ]);
     }

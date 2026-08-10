@@ -1,0 +1,1046 @@
+{
+  "info": {
+    "name": "MCDSS - Phase 9 (Notifications)",
+    "description": "Exercises every Phase 9 (Notifications) deliverable from TEAM_DEVELOPMENT_PLAN.md against a running `docker compose up -d` stack: the `notifications` table + `NotificationService::dispatch()` wired into all 5 event triggers (application received, status change, internal account created, pool invitation, re-engagement email), plus the `GET /api/notifications` inbox and `PATCH /api/notifications/{id}/read` endpoints.\n\nPrereqs:\n1. `docker compose up -d --build`\n2. `docker compose exec laravel php artisan migrate --seed` (must include `2026_07_23_000001_create_notifications_table.php`).\n3. Run once: `docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"` and paste the UUID into the `department_id` collection variable.\n4. Like the Phase 8 collection, this one creates its OWN dedicated hiring round via tinker (see '0. Setup') rather than closing the shared seeded round -- closing it would break every other collection's fixture setup.\n5. Run the whole collection top-to-bottom via Collection Runner (order matters).\n\nNote on scope: this collection verifies emails via the Mailpit API (`http://localhost:8025`) the same way the Phase 7 collection's staff-account temp-password retrieval does -- it is not a substitute for opening the Mailhog/Mailpit UI to eyeball the rendered templates, which is worth doing once by hand.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "mailpit_url",
+      "value": "http://localhost:8025"
+    },
+    {
+      "key": "department_id",
+      "value": ""
+    },
+    {
+      "key": "phase9_round_id",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "director_token",
+      "value": ""
+    },
+    {
+      "key": "position_id",
+      "value": ""
+    },
+    {
+      "key": "criterion_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_token",
+      "value": ""
+    },
+    {
+      "key": "application_id",
+      "value": ""
+    },
+    {
+      "key": "application_received_notification_id",
+      "value": ""
+    },
+    {
+      "key": "staff_email",
+      "value": ""
+    },
+    {
+      "key": "staff_temp_password",
+      "value": ""
+    },
+    {
+      "key": "staff_token",
+      "value": ""
+    },
+    {
+      "key": "pool_entry_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "Login as Seeded Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is admin', () => pm.expect(json.user.role).to.eql('admin'));",
+                  "pm.collectionVariables.set('admin_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Seeded Director",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"director@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is director', () => pm.expect(json.user.role).to.eql('director'));",
+                  "pm.collectionVariables.set('director_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check department_id is set (manual prereq)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "No `/api/departments` endpoint exists. Run once:\n  docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"\nand paste the UUID into the 'department_id' collection variable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('department_id collection variable is set (see request description)', () => pm.expect(pm.collectionVariables.get('department_id')).to.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Dedicated Hiring Round for Phase 9 (manual prereq)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/user",
+            "description": "There is no `/api/hiring-rounds` create endpoint. Run once (single-quoted --execute, double-quoted PHP strings -- no backslash-escaping needed):\n\n  docker compose exec laravel php artisan tinker --execute='\n  $admin = App\\Models\\User::where(\"email\", \"admin@mcdss.local\")->first();\n  $round = App\\Models\\HiringRound::firstOrCreate(\n      [\"name\" => \"Phase 9 Test Round\"],\n      [\"semester\" => \"Phase9-Semester\", \"academic_year\" => 2027, \"start_date\" => \"2027-06-01\", \"end_date\" => \"2027-10-31\", \"status\" => \"active\", \"created_by\" => $admin?->id]\n  );\n  echo $round->id;\n  '\n\nPaste the echoed UUID into the 'phase9_round_id' collection variable. Its start_date is later than every other seeded/test round, so it becomes the auto-attach target for POST /api/applications from here on -- safe to close later in this collection without touching the shared seeded round other collections depend on."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('phase9_round_id collection variable is set (see request description)', () => pm.expect(pm.collectionVariables.get('phase9_round_id')).to.not.be.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Fixture - Position + Criterion (open)",
+      "item": [
+        {
+          "name": "Create Position (external, 1 slot)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Phase 9 Notification Test Lecturer\",\n  \"target_applicant_type\": \"external\",\n  \"slots_available\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('position_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Numeric Criterion (weight 1.0)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Years of Relevant Experience\",\n  \"data_type\": \"numeric\",\n  \"weight\": 1.0,\n  \"min_value\": 0,\n  \"max_value\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('criterion_id', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open Position",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"open\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Position status is open', () => pm.expect(pm.response.json().data.status).to.eql('open'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Trigger - Application Received",
+      "item": [
+        {
+          "name": "Register Applicant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Notif\",\n  \"last_name\": \"Tester\",\n  \"email\": \"{{applicant_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_email', `phase9.applicant.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('applicant_token', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create, Save, Submit Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 or 201', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "pm.collectionVariables.set('application_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save Form Response",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"responses\": [\n    { \"criterion_id\": \"{{criterion_id}}\", \"raw_value\": \"5\" }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/submit"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is applied', () => pm.expect(pm.response.json().data.status).to.eql('applied'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Application-Received Email via Mailpit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('applicant_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email) && m.Subject === 'Application Received');",
+                  "pm.test('Application Received email found for ' + email, () => pm.expect(match).to.not.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Applicant: GET /api/notifications (application_received present)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Exactly 1 notification so far', () => pm.expect(rows.length).to.eql(1));",
+                  "pm.test('type is application_received', () => pm.expect(rows[0].type).to.eql('application_received'));",
+                  "pm.test('delivery_status is sent', () => pm.expect(rows[0].delivery_status).to.eql('sent'));",
+                  "pm.test('application_id matches', () => pm.expect(rows[0].application_id).to.eql(pm.collectionVariables.get('application_id')));",
+                  "pm.test('read_at is null (unread)', () => pm.expect(rows[0].read_at).to.be.null);",
+                  "pm.collectionVariables.set('application_received_notification_id', rows[0].id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Trigger - Status Change",
+      "item": [
+        {
+          "name": "Advance Status: applied -> for_interview (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_interview\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('New status is for_interview', () => pm.expect(pm.response.json().data.status).to.eql('for_interview'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Status-Change Email via Mailpit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('applicant_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email) && m.Subject === 'Your Application Status Has Changed');",
+                  "pm.test('Status-change email found for ' + email, () => pm.expect(match).to.not.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Applicant: GET /api/notifications (unread-first ordering)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Exactly 2 notifications so far', () => pm.expect(rows.length).to.eql(2));",
+                  "pm.test('Newest (status_change) is first -- both unread, ordered by created_at desc', () => pm.expect(rows[0].type).to.eql('status_change'));",
+                  "pm.test('application_received is second', () => pm.expect(rows[1].type).to.eql('application_received'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Trigger - Internal Account Created",
+      "item": [
+        {
+          "name": "Create Internal Staff Account (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Casey\",\n  \"last_name\": \"Faculty\",\n  \"email\": \"{{staff_email}}\",\n  \"role\": \"internal_applicant\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('staff_email', `phase9.staff.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Role is internal_applicant', () => pm.expect(pm.response.json().user.role).to.eql('internal_applicant'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fetch Temp Password (via Mailpit API)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('staff_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email));",
+                  "pm.test('Account-created email found for ' + email, () => pm.expect(match).to.not.be.undefined);",
+                  "if (match) {",
+                  "    pm.sendRequest({ url: pm.collectionVariables.get('mailpit_url') + '/api/v1/message/' + match.ID, method: 'GET' }, (err, res) => {",
+                  "        if (!err && res) {",
+                  "            const body = res.json();",
+                  "            const html = body.HTML || body.Text || '';",
+                  "            const tokenMatch = html.match(/<strong>([^<]+)<\\/strong>/);",
+                  "            if (tokenMatch) {",
+                  "                pm.collectionVariables.set('staff_temp_password', tokenMatch[1].trim());",
+                  "            }",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as New Staff (Temp Password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staff_email}}\",\n  \"password\": \"{{staff_temp_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('staff_token', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Staff: GET /api/notifications (account_created present)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staff_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Exactly 1 notification', () => pm.expect(rows.length).to.eql(1));",
+                  "pm.test('type is account_created', () => pm.expect(rows[0].type).to.eql('account_created'));",
+                  "pm.test('delivery_status is sent', () => pm.expect(rows[0].delivery_status).to.eql('sent'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Trigger - Pool Invitation & Re-engagement",
+      "item": [
+        {
+          "name": "Close Phase 9 Round as Admin (pools the for_interview applicant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds/{{phase9_round_id}}/close"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('1 pool entry created', () => pm.expect(json.data.pool_entries_created).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Pool-Invitation Email via Mailpit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('applicant_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email) && m.Subject === \"You've Been Added to Our Applicant Pool\");",
+                  "pm.test('Pool-invitation email found for ' + email, () => pm.expect(match).to.not.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Pool for Phase 9 Round (Admin) -- capture pool_entry_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/applicant-pool?hiring_round_id={{phase9_round_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applicant-pool"
+              ],
+              "query": [
+                {
+                  "key": "hiring_round_id",
+                  "value": "{{phase9_round_id}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Exactly 1 pool entry', () => pm.expect(rows.length).to.eql(1));",
+                  "pm.collectionVariables.set('pool_entry_id', rows[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reengage Pool Entry (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant-pool/{{pool_entry_id}}/reengage",
+            "description": "Phase 10: directors are read-only, so pool re-engagement is admin-only. This request used the director token through Phase 9."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is reengaged', () => pm.expect(pm.response.json().data.status).to.eql('reengaged'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Re-engagement Email via Mailpit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit reachable', () => pm.response.to.have.status(200));",
+                  "const email = pm.collectionVariables.get('applicant_email');",
+                  "const messages = (pm.response.json().messages) || [];",
+                  "const match = messages.find(m => (m.To || []).some(t => t.Address === email) && m.Subject === 'A New Opportunity Awaits \u2014 Reconnect With Us');",
+                  "pm.test('Re-engagement email found for ' + email, () => pm.expect(match).to.not.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Applicant: GET /api/notifications (all 4 triggers present, newest first)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Exactly 4 notifications', () => pm.expect(rows.length).to.eql(4));",
+                  "pm.test('Newest (reengagement) is first', () => pm.expect(rows[0].type).to.eql('reengagement'));",
+                  "const types = rows.map(r => r.type);",
+                  "pm.test('All 4 trigger types present', () => {",
+                  "  pm.expect(types).to.include('application_received');",
+                  "  pm.expect(types).to.include('status_change');",
+                  "  pm.expect(types).to.include('pool_invitation');",
+                  "  pm.expect(types).to.include('reengagement');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Notifications Inbox - Mark Read & Guard Rails",
+      "item": [
+        {
+          "name": "Applicant: Mark application_received Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications/{{application_received_notification_id}}/read"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('read_at is set', () => pm.expect(pm.response.json().data.read_at).to.not.be.null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Applicant: GET /api/notifications (read entry sorts after unread)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "const readIndex = rows.findIndex(r => r.id === pm.collectionVariables.get('application_received_notification_id'));",
+                  "pm.test('The now-read notification is last (unread-first ordering)', () => pm.expect(readIndex).to.eql(rows.length - 1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Different User Cannot Mark Applicant's Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staff_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications/{{application_received_notification_id}}/read",
+            "description": "NotificationController::markRead aborts 404 (not 403) when the notification doesn't belong to the requesting user, matching ApplicationController::assertOwnership's style of hiding existence rather than exposing a 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Unauthenticated Cannot List Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

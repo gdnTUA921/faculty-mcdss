@@ -430,31 +430,34 @@ def test_parse_resume_extracts_structured_data_from_docx():
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "name": "Jane Marie Doe",
-        "email": "jane.doe@example.com",
-        "phone": "+1 (555) 123-4567",
-        "education": [
-            {
-                "raw_text": "B.S. Computer Science, University of Example, 2022",
-            }
-        ],
-        "work_experience": [
-            {
-                "raw_text": "Software Engineer at Example Labs, Jan 2021 - Present",
-            }
-        ],
-        "certifications": [
-            {
-                "raw_text": "AWS Certified Solutions Architect",
-            }
-        ],
-        "publications": [
-            {
-                "raw_text": "Doe, J. (2024). Resume Parsing with Rules. Journal of Examples.",
-            }
-        ],
-    }
+    body = response.json()
+
+    assert body["name"] == "Jane Marie Doe"
+    assert body["email"] == "jane.doe@example.com"
+    assert body["phone"] == "+1 (555) 123-4567"
+
+    education = body["education"][0]
+    assert education["raw_text"] == "B.S. Computer Science, University of Example, 2022"
+    assert "B.S" in education["degree"]
+    assert education["field_of_study"] == "Computer Science"
+    assert education["institution"] == "University of Example"
+    assert education["graduation_year"] == "2022"
+
+    # Work Experience is exposed under the unified "experience" section.
+    experience = body["experience"][0]
+    assert experience["raw_text"] == "Software Engineer at Example Labs, Jan 2021 - Present"
+    assert experience["position"] == "Software Engineer"
+    assert experience["organization"] == "Example Labs"
+    assert experience["start_date"] == "Jan 2021"
+    assert experience["end_date"] == "Present"
+
+    certification = body["certifications"][0]
+    assert certification["raw_text"] == "AWS Certified Solutions Architect"
+    assert certification["name"] == "AWS Certified Solutions Architect"
+
+    assert body["publications"] == [
+        {"raw_text": "Doe, J. (2024). Resume Parsing with Rules. Journal of Examples."}
+    ]
 
 
 def test_parse_resume_accepts_pdf_upload(monkeypatch):
@@ -476,7 +479,70 @@ def test_parse_resume_accepts_pdf_upload(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json()["email"] == "john.public@example.com"
-    assert response.json()["education"] == [
-        {"raw_text": "Master of Science in Data Science, University of Sample, 2023"}
-    ]
+    body = response.json()
+    assert body["email"] == "john.public@example.com"
+
+    education = body["education"][0]
+    assert education["raw_text"] == "Master of Science in Data Science, University of Sample, 2023"
+    assert education["degree"] == "Master of Science"
+    assert education["field_of_study"] == "Data Science"
+    assert education["institution"] == "University of Sample"
+    assert education["graduation_year"] == "2023"
+
+
+def test_parse_resume_extracts_expanded_sections(monkeypatch):
+    monkeypatch.setattr(
+        "main.extract_text_from_pdf",
+        lambda file_bytes: (
+            "Maria Santos\n"
+            "maria.santos@example.com\n"
+            "+63 917 555 1234\n"
+            "linkedin.com/in/maria-santos | github.com/msantos\n"
+            "Address: 12 Rizal Street, Quezon City, Philippines\n\n"
+            "Teaching Experience\n"
+            "Assistant Professor at State University, 2019 - Present\n"
+            "- Delivered undergraduate lectures\n"
+            "- Courses taught: Data Structures, Algorithms\n\n"
+            "Certifications and Licenses\n"
+            "- PRC Licensed Professional Teacher, issued by PRC, 2018, valid until 2027\n\n"
+            "Skills\n"
+            "Python, SQL, Curriculum Design\n\n"
+            "Research Interests\n"
+            "Machine Learning; Educational Data Mining\n\n"
+            "Awards and Honors\n"
+            "- Outstanding Faculty Award, 2022\n\n"
+            "Professional Development\n"
+            "- Outcome-Based Education Workshop, 2021"
+        ),
+    )
+
+    response = client.post(
+        "/parse-resume",
+        headers={"X-Service-Key": "changeme"},
+        files={"file": ("resume.pdf", b"%PDF-1.4\nfake", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["linkedin"] == "https://linkedin.com/in/maria-santos"
+    assert body["portfolio"] == "https://github.com/msantos"
+    assert body["address"] == "12 Rizal Street, Quezon City, Philippines"
+
+    # Teaching Experience folds into the unified experience section.
+    experience = body["experience"][0]
+    assert experience["position"] == "Assistant Professor"
+    assert experience["organization"] == "State University"
+    assert experience["start_date"] == "2019"
+    assert experience["end_date"] == "Present"
+    assert "Delivered undergraduate lectures" in experience["responsibilities"]
+    assert experience["courses_taught"] == ["Data Structures", "Algorithms"]
+
+    certification = body["certifications"][0]
+    assert certification["name"] == "PRC Licensed Professional Teacher"
+    assert certification["expiration_date"] == "2027"
+
+    assert body["skills"] == ["Python", "SQL", "Curriculum Design"]
+    assert body["research_interests"] == ["Machine Learning", "Educational Data Mining"]
+    assert body["awards"][0]["raw_text"] == "Outstanding Faculty Award, 2022"
+    assert body["professional_development"][0]["raw_text"] == "Outcome-Based Education Workshop, 2021"

@@ -62,6 +62,10 @@ const statusMap: Record<string, BadgeStyle> = {
   pool_active: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Active' },
   reengaged: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Re-engaged' },
   pool_inactive: { bg: 'bg-gray-100', text: 'text-gray-500', label: 'Inactive' },
+  expired: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Expired' },
+
+  // Application lifecycle
+  draft: { bg: 'bg-slate-100', text: 'text-slate-600', label: 'Draft' },
 
   // Temp password
   temp_yes: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Temporary' },
@@ -72,6 +76,7 @@ const statusMap: Record<string, BadgeStyle> = {
   status_change: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Status Change' },
   pool_invitation: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Pool Invitation' },
   account_created: { bg: 'bg-green-100', text: 'text-green-700', label: 'Account Created' },
+  reengagement: { bg: 'bg-teal-100', text: 'text-teal-700', label: 'Re-engagement' },
 }
 
 export default function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {

@@ -88,6 +88,24 @@ class DocumentController extends Controller
             abort(404);
         }
 
+        // The portal already hides the delete button on verified documents; enforce
+        // it here too, so HR sign-off can't be undone by a direct API call.
+        if ($document->is_verified) {
+            abort(422, 'Verified documents cannot be deleted. Contact HR if this is wrong.');
+        }
+
+        // Profile-level uploads carry no application_id but still appear in every
+        // review packet, so once anything has been submitted, deleting one would
+        // mutate an application HR is already reviewing. Drafts don't count --
+        // before submitting, applicants are free to clear out mistaken uploads.
+        $hasSubmitted = Application::where('applicant_profile_id', $applicantProfile->id)
+            ->where('status', '!=', 'draft')
+            ->exists();
+
+        if ($hasSubmitted) {
+            abort(422, 'Documents cannot be deleted once you have submitted an application. Contact HR if something needs to change.');
+        }
+
         Storage::disk('local')->delete($document->file_path);
         $document->delete();
 

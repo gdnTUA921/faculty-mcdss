@@ -5,34 +5,118 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8000" },
-    { "key": "department_id", "value": "" },
-    { "key": "phase8_round_id", "value": "" },
-    { "key": "phase8_semester", "value": "Phase8-Semester" },
-    { "key": "round2_id", "value": "" },
-    { "key": "admin_token", "value": "" },
-    { "key": "director_token", "value": "" },
-    { "key": "position_id", "value": "" },
-    { "key": "criterion_id", "value": "" },
-    { "key": "applicant_a_email", "value": "" },
-    { "key": "applicant_a_token", "value": "" },
-    { "key": "application_a_id", "value": "" },
-    { "key": "applicant_b_email", "value": "" },
-    { "key": "applicant_b_token", "value": "" },
-    { "key": "application_b_id", "value": "" },
-    { "key": "applicant_c_email", "value": "" },
-    { "key": "applicant_c_token", "value": "" },
-    { "key": "application_c_id", "value": "" },
-    { "key": "applicant_d_email", "value": "" },
-    { "key": "applicant_d_token", "value": "" },
-    { "key": "application_d_id", "value": "" },
-    { "key": "pool_entry_b_id", "value": "" },
-    { "key": "pool_entry_c_id", "value": "" },
-    { "key": "position2_id", "value": "" },
-    { "key": "criterion2_id", "value": "" },
-    { "key": "applicant_e_email", "value": "" },
-    { "key": "applicant_e_token", "value": "" },
-    { "key": "application_e_id", "value": "" }
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "department_id",
+      "value": ""
+    },
+    {
+      "key": "phase8_round_id",
+      "value": ""
+    },
+    {
+      "key": "phase8_semester",
+      "value": "Phase8-Semester"
+    },
+    {
+      "key": "round2_id",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "director_token",
+      "value": ""
+    },
+    {
+      "key": "position_id",
+      "value": ""
+    },
+    {
+      "key": "criterion_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_a_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_a_token",
+      "value": ""
+    },
+    {
+      "key": "application_a_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_b_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_b_token",
+      "value": ""
+    },
+    {
+      "key": "application_b_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_c_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_c_token",
+      "value": ""
+    },
+    {
+      "key": "application_c_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_d_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_d_token",
+      "value": ""
+    },
+    {
+      "key": "application_d_id",
+      "value": ""
+    },
+    {
+      "key": "pool_entry_b_id",
+      "value": ""
+    },
+    {
+      "key": "pool_entry_c_id",
+      "value": ""
+    },
+    {
+      "key": "position2_id",
+      "value": ""
+    },
+    {
+      "key": "criterion2_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_e_email",
+      "value": ""
+    },
+    {
+      "key": "applicant_e_token",
+      "value": ""
+    },
+    {
+      "key": "application_e_id",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -42,12 +126,21 @@
           "name": "Login as Seeded Admin",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/auth/login",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"password\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "description": "Uses the seeded admin from UserSeeder.php."
           },
@@ -70,12 +163,21 @@
           "name": "Login as Seeded Director",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/auth/login",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"director@mcdss.local\",\n  \"password\": \"password\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "description": "Uses the seeded director from UserSeeder.php. Director should have read access to pool listing / reengage / status but no ability to close a round."
           },
@@ -98,7 +200,12 @@
           "name": "Check department_id is set (manual prereq)",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/auth/user",
             "description": "No `/api/departments` endpoint exists. Run once:\n  docker compose exec laravel php artisan tinker --execute=\"echo App\\Models\\Department::first()->id;\"\nand paste the UUID into the 'department_id' collection variable."
           },
@@ -118,7 +225,12 @@
           "name": "Create Dedicated Hiring Round for Phase 8 (manual prereq)",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/auth/user",
             "description": "There is no `/api/hiring-rounds` create endpoint in the current implementation. Run once (single-quoted --execute, double-quoted PHP strings -- no backslash-escaping needed, safe to copy straight out of this description):\n\n  docker compose exec laravel php artisan tinker --execute='\n  $admin = App\\Models\\User::where(\"email\", \"admin@mcdss.local\")->first();\n  $round = App\\Models\\HiringRound::firstOrCreate(\n      [\"name\" => \"Phase 8 Test Round\"],\n      [\"semester\" => \"Phase8-Semester\", \"academic_year\" => 2026, \"start_date\" => \"2026-11-01\", \"end_date\" => \"2027-03-31\", \"status\" => \"active\", \"created_by\" => $admin?->id]\n  );\n  echo $round->id;\n  '\n\nPaste the echoed UUID into the 'phase8_round_id' collection variable. This round's start_date (2026-11-01) is later than the seeded round's (2026-06-01), so it becomes the 'currently active' round that POST /api/applications auto-attaches to -- meaning it's safe to close in Section 2 without affecting the shared seeded round other collections depend on."
           },
@@ -144,14 +256,24 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/positions",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Phase 8 Pool Test Lecturer\",\n  \"target_applicant_type\": \"external\",\n  \"slots_available\": 1\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -172,14 +294,24 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Years of Relevant Experience\",\n  \"data_type\": \"numeric\",\n  \"weight\": 1.0,\n  \"min_value\": 0,\n  \"max_value\": 10\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -200,14 +332,24 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/positions/{{position_id}}/status",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"open\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -227,18 +369,32 @@
           "name": "Register Applicant A (will be Hired)",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/register",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"first_name\": \"Alex\",\n  \"last_name\": \"ToBeHired\",\n  \"email\": \"{{applicant_a_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
             {
               "listen": "prerequest",
-              "script": { "type": "text/javascript", "exec": [ "pm.collectionVariables.set('applicant_a_email', `phase8.applicant.a.${Date.now()}@example.com`);" ] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_a_email', `phase8.applicant.a.${Date.now()}@example.com`);"
+                ]
+              }
             },
             {
               "listen": "test",
@@ -257,14 +413,24 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_a_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "description": "Draft-create step. Save + submit happen in the two requests below (kept separate so each is independently retryable, matching the Phase 7 collection's pattern)."
           },
@@ -288,25 +454,48 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_a_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_a_id}}",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"responses\": [\n    { \"criterion_id\": \"{{criterion_id}}\", \"raw_value\": \"8\" }\n  ]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "Applicant A: Submit Application",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_a_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applications/{{application_a_id}}/submit"
           },
           "event": [
@@ -327,14 +516,36 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_a_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"for_interview\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_interview\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
@@ -342,14 +553,36 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_a_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"for_review\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
@@ -357,11 +590,25 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_a_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"hired\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"hired\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -380,18 +627,32 @@
           "name": "Register Applicant B (will stay Applied -> pool)",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/register",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"first_name\": \"Blair\",\n  \"last_name\": \"StaysApplied\",\n  \"email\": \"{{applicant_b_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
             {
               "listen": "prerequest",
-              "script": { "type": "text/javascript", "exec": [ "pm.collectionVariables.set('applicant_b_email', `phase8.applicant.b.${Date.now()}@example.com`);" ] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_b_email', `phase8.applicant.b.${Date.now()}@example.com`);"
+                ]
+              }
             },
             {
               "listen": "test",
@@ -410,11 +671,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_b_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications",
-            "body": { "mode": "raw", "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -434,25 +709,48 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_b_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_b_id}}",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"responses\": [\n    { \"criterion_id\": \"{{criterion_id}}\", \"raw_value\": \"4\" }\n  ]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "Applicant B: Submit Application (left as 'applied')",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_b_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applications/{{application_b_id}}/submit"
           },
           "event": [
@@ -472,18 +770,32 @@
           "name": "Register Applicant C (will be Rejected -> pool)",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/register",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"first_name\": \"Casey\",\n  \"last_name\": \"ToBeRejected\",\n  \"email\": \"{{applicant_c_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
             {
               "listen": "prerequest",
-              "script": { "type": "text/javascript", "exec": [ "pm.collectionVariables.set('applicant_c_email', `phase8.applicant.c.${Date.now()}@example.com`);" ] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_c_email', `phase8.applicant.c.${Date.now()}@example.com`);"
+                ]
+              }
             },
             {
               "listen": "test",
@@ -502,11 +814,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_c_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_c_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications",
-            "body": { "mode": "raw", "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -526,29 +852,60 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_c_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_c_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_c_id}}",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"responses\": [\n    { \"criterion_id\": \"{{criterion_id}}\", \"raw_value\": \"1\" }\n  ]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "Applicant C: Submit Application",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_c_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_c_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applications/{{application_c_id}}/submit"
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
@@ -556,11 +913,25 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_c_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"rejected\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"rejected\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -579,18 +950,32 @@
           "name": "Register Applicant D (Draft only -- must be excluded from pool)",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/register",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"first_name\": \"Drew\",\n  \"last_name\": \"NeverSubmitted\",\n  \"email\": \"{{applicant_d_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
             {
               "listen": "prerequest",
-              "script": { "type": "text/javascript", "exec": [ "pm.collectionVariables.set('applicant_d_email', `phase8.applicant.d.${Date.now()}@example.com`);" ] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_d_email', `phase8.applicant.d.${Date.now()}@example.com`);"
+                ]
+              }
             },
             {
               "listen": "test",
@@ -609,11 +994,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_d_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_d_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications",
-            "body": { "mode": "raw", "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -639,30 +1038,61 @@
           "name": "[Guard Rail] Director Cannot Close Round",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{director_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/hiring-rounds/{{phase8_round_id}}/close",
             "description": "POST .../close is admin-only per routes/api.php."
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "[Guard Rail] Applicant Cannot Close Round",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_b_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/hiring-rounds/{{phase8_round_id}}/close"
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "Close Round as Admin",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/hiring-rounds/{{phase8_round_id}}/close",
             "description": "A (hired) and D (draft) must be excluded; B (applied) and C (rejected) must be pooled per HiringRoundCloseController's whereIn(['applied','for_interview','for_review','rejected','withdrawn'])."
           },
@@ -686,7 +1116,12 @@
           "name": "[Guard Rail] Cannot Close an Already-Closed Round",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/hiring-rounds/{{phase8_round_id}}/close"
           },
           "event": [
@@ -706,12 +1141,27 @@
           "name": "List Pool Filtered by hiring_round_id (Admin)",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/api/applicant-pool?hiring_round_id={{phase8_round_id}}",
-              "host": [ "{{base_url}}" ],
-              "path": [ "api", "applicant-pool" ],
-              "query": [ { "key": "hiring_round_id", "value": "{{phase8_round_id}}" } ]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applicant-pool"
+              ],
+              "query": [
+                {
+                  "key": "hiring_round_id",
+                  "value": "{{phase8_round_id}}"
+                }
+              ]
             }
           },
           "event": [
@@ -744,12 +1194,27 @@
           "name": "List Pool Filtered by semester (Director) [Gap Fix #3]",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{director_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/api/applicant-pool?semester={{phase8_semester}}",
-              "host": [ "{{base_url}}" ],
-              "path": [ "api", "applicant-pool" ],
-              "query": [ { "key": "semester", "value": "{{phase8_semester}}" } ]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applicant-pool"
+              ],
+              "query": [
+                {
+                  "key": "semester",
+                  "value": "{{phase8_semester}}"
+                }
+              ]
             },
             "description": "Regression test for the missing 'semester' filter the plan calls for (previously only hiring_round_id was filterable)."
           },
@@ -771,18 +1236,36 @@
           "name": "[Guard Rail] Applicant Cannot List Pool",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_b_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applicant-pool"
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "[Manual Verification] v_active_pool View Exists and Returns Our 2 Entries [Gap Fix #1]",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/auth/user",
             "description": "[Known Gap] No HTTP endpoint reads `v_active_pool` directly (the general /api/applicant-pool listing must support all 4 pool statuses via filter, which this view -- hardcoded to `WHERE status = 'active'` -- cannot serve). To confirm the previously-missing migration (2026_07_20_000002_create_active_pool_view.php) actually created the view and it's queryable, run:\n\n  docker compose exec laravel php artisan tinker --execute='echo DB::table(\"v_active_pool\")->where(\"original_round\", \"Phase 8 Test Round\")->count();'\n\nExpected: 2 (B and C are both still pool_status='active' at this point in the run -- run this BEFORE the reengage/status-update steps below, since those move B and C out of 'active')."
           },
@@ -799,11 +1282,17 @@
           ]
         },
         {
-          "name": "Reengage B's Pool Entry (as Director)",
+          "name": "Reengage B's Pool Entry (as Admin)",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{director_token}}" } ],
-            "url": "{{base_url}}/api/applicant-pool/{{pool_entry_b_id}}/reengage"
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{admin_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant-pool/{{pool_entry_b_id}}/reengage",
+            "description": "Phase 10: directors are read-only, so pool re-engagement is admin-only. This request used the director token through Phase 9."
           },
           "event": [
             {
@@ -824,25 +1313,54 @@
           "name": "[Guard Rail] Cannot Reengage Same Entry Twice",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applicant-pool/{{pool_entry_b_id}}/reengage"
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 422', () => pm.response.to.have.status(422));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "List Pool Filtered by pool_status=reengaged (Admin)",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/api/applicant-pool?hiring_round_id={{phase8_round_id}}&pool_status=reengaged",
-              "host": [ "{{base_url}}" ],
-              "path": [ "api", "applicant-pool" ],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applicant-pool"
+              ],
               "query": [
-                { "key": "hiring_round_id", "value": "{{phase8_round_id}}" },
-                { "key": "pool_status", "value": "reengaged" }
+                {
+                  "key": "hiring_round_id",
+                  "value": "{{phase8_round_id}}"
+                },
+                {
+                  "key": "pool_status",
+                  "value": "reengaged"
+                }
               ]
             }
           },
@@ -866,11 +1384,25 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applicant-pool/{{pool_entry_c_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"expired\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"expired\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -890,15 +1422,37 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applicant-pool/{{pool_entry_c_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"active\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "description": "UpdatePoolStatusRequest only allows 'inactive' or 'expired' -- HR cannot manually set 'active' or 'reengaged' through this endpoint."
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 422', () => pm.response.to.have.status(422));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
           ]
         },
         {
@@ -906,21 +1460,48 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_c_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_c_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applicant-pool/{{pool_entry_c_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"inactive\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"inactive\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 403', () => pm.response.to.have.status(403));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "Applicant B: Get My Pool Status (reengaged)",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_b_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_b_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applicant/pool-status"
           },
           "event": [
@@ -942,7 +1523,12 @@
           "name": "Applicant A: Get My Pool Status (hired -> no pool membership)",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_a_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_a_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applicant/pool-status"
           },
           "event": [
@@ -967,7 +1553,12 @@
           "name": "Create Second Dedicated Hiring Round (manual prereq)",
           "request": {
             "method": "GET",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/auth/user",
             "description": "Run once (single-quoted --execute, double-quoted PHP strings):\n\n  docker compose exec laravel php artisan tinker --execute='\n  $admin = App\\Models\\User::where(\"email\", \"admin@mcdss.local\")->first();\n  $round = App\\Models\\HiringRound::firstOrCreate(\n      [\"name\" => \"Phase 8 Test Round 2 (Zero Unhired Regression)\"],\n      [\"semester\" => \"Phase8-Semester-2\", \"academic_year\" => 2026, \"start_date\" => \"2026-12-01\", \"end_date\" => \"2027-04-30\", \"status\" => \"active\", \"created_by\" => $admin?->id]\n  );\n  echo $round->id;\n  '\n\nPaste the echoed UUID into the 'round2_id' collection variable. Its start_date (2026-12-01) is later than 'Phase 8 Test Round', so it becomes the new auto-attach target for POST /api/applications from here on."
           },
@@ -988,14 +1579,24 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/positions",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Phase 8 Zero-Unhired Regression Lecturer\",\n  \"target_applicant_type\": \"external\",\n  \"slots_available\": 1\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1016,14 +1617,24 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/positions/{{position2_id}}/criteria",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Years of Relevant Experience\",\n  \"data_type\": \"numeric\",\n  \"weight\": 1.0,\n  \"min_value\": 0,\n  \"max_value\": 10\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1044,32 +1655,68 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/positions/{{position2_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"open\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"open\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "Register Applicant E (will be the only applicant, Hired)",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/register",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"first_name\": \"Ellis\",\n  \"last_name\": \"OnlyHired\",\n  \"email\": \"{{applicant_e_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
             {
               "listen": "prerequest",
-              "script": { "type": "text/javascript", "exec": [ "pm.collectionVariables.set('applicant_e_email', `phase8.applicant.e.${Date.now()}@example.com`);" ] }
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('applicant_e_email', `phase8.applicant.e.${Date.now()}@example.com`);"
+                ]
+              }
             },
             {
               "listen": "test",
@@ -1088,11 +1735,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_e_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_e_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications",
-            "body": { "mode": "raw", "raw": "{\n  \"position_id\": \"{{position2_id}}\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position2_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -1112,29 +1773,60 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{applicant_e_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_e_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_e_id}}",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"responses\": [\n    { \"criterion_id\": \"{{criterion2_id}}\", \"raw_value\": \"9\" }\n  ]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
           "name": "Applicant E: Submit Application",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{applicant_e_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_e_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/applications/{{application_e_id}}/submit"
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
@@ -1142,14 +1834,36 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_e_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"for_interview\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_interview\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
@@ -1157,14 +1871,36 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_e_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"for_review\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [ "pm.test('Status is 200', () => pm.response.to.have.status(200));" ] } }
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
         {
@@ -1172,11 +1908,25 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/api/applications/{{application_e_id}}/status",
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"hired\"\n}", "options": { "raw": { "language": "json" } } }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"hired\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -1195,7 +1945,12 @@
           "name": "Close Round 2 as Admin (must succeed with zero unhired)",
           "request": {
             "method": "POST",
-            "header": [ { "key": "Authorization", "value": "Bearer {{admin_token}}" } ],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/hiring-rounds/{{round2_id}}/close",
             "description": "Before the fix, HiringRoundCloseController threw a 422 ValidationException whenever $unhiredApplications was empty, permanently blocking this round from ever closing since every applicant (E) is hired. This must now return 200."
           },

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateApplicationStatusRequest;
+use App\Mail\StatusChanged;
 use App\Models\Application;
 use App\Models\StatusHistory;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 
@@ -58,6 +60,16 @@ class ApplicationStatusController extends Controller
             'changed_by'      => $request->user()->id,
             'changed_at'      => now(),
         ]);
+
+        $applicantUser = $application->applicantProfile->user;
+        NotificationService::dispatch(
+            $applicantUser,
+            'status_change',
+            'Your Application Status Has Changed',
+            "Your application for {$application->position->title} moved from {$previousStatus} to {$newStatus}.",
+            new StatusChanged($application->position->title, $previousStatus, $newStatus),
+            $application->id,
+        );
 
         return response()->json([
             'message' => 'Application status updated successfully.',

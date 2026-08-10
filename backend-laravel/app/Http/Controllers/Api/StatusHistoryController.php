@@ -2,14 +2,21 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ScopesToDirector;
 use App\Http\Controllers\Controller;
 use App\Models\Application;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class StatusHistoryController extends Controller
 {
-    public function __invoke(Application $application): JsonResponse
+    use ScopesToDirector;
+
+    public function __invoke(Request $request, Application $application): JsonResponse
     {
+        $application->load('position:id,department_id');
+        $this->assertDepartmentAccess($request->user(), $application->position?->department_id);
+
         $history = $application->statusHistory()
             ->with('changedBy:id,first_name,last_name,email')
             ->orderBy('changed_at', 'asc')

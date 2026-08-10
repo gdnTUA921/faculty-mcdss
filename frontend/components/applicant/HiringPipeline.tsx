@@ -1,13 +1,15 @@
 import { FiCheck, FiClock } from 'react-icons/fi'
 
-type Status = 'applied' | 'for_interview' | 'for_review' | 'hired' | 'rejected' | 'withdrawn'
+// 'draft' is included so callers can pass an application status straight through;
+// it simply renders as "not yet started" since it precedes the pipeline.
+type Status = 'draft' | 'applied' | 'for_interview' | 'for_review' | 'hired' | 'rejected' | 'withdrawn'
 
 interface HiringPipelineProps {
   currentStatus: Status
   compact?: boolean
 }
 
-const stages: { id: Status; label: string }[] = [
+const stages: { id: Exclude<Status, 'draft' | 'rejected' | 'withdrawn'>; label: string }[] = [
   { id: 'applied', label: 'Applied' },
   { id: 'for_interview', label: 'For Interview' },
   { id: 'for_review', label: 'For Review' },

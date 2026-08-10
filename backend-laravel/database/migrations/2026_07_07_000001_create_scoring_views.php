@@ -9,7 +9,9 @@ return new class extends Migration {
     {
         DB::statement("CREATE OR REPLACE VIEW v_applicant_rankings AS
         SELECT a.id AS application_id, ap.id AS applicant_profile_id,
-        u.first_name ||  '' || u.last_name AS applicant_name,
+        u.first_name || ' ' || u.last_name AS applicant_name,
+        u.first_name AS first_name,
+        u.last_name AS last_name,
         ap.applicant_type,
         p.id AS position_id, p.title AS position_title,
         d.name AS department_name,

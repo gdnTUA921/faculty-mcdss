@@ -1,0 +1,3460 @@
+{
+  "info": {
+    "name": "MCDSS - Phase 10A (Backend Gap-Fill)",
+    "description": "Verifies the Phase 10A backend work: the endpoints the Next.js screens need that did not exist after Phase 9, plus the director read-access and department-scoping changes.\n\nRun against a live `docker compose up -d` stack with the seeded admin (admin@mcdss.local) and director (director@mcdss.local), both password `password`. The seeded director must lead at least one department, and at least one other department must have no director -- the setup folder asserts both and fails fast otherwise.\n\nNEW ENDPOINTS COVERED\n  GET    /api/dashboard/stats                         admin+director, scoped\n  GET    /api/departments                             admin+director, scoped\n  GET    /api/hiring-rounds                           admin+director\n  GET    /api/hiring-rounds/{id}                      admin+director\n  POST   /api/hiring-rounds                           admin\n  PUT    /api/hiring-rounds/{id}                      admin\n  GET    /api/applications                            admin+director, filters+pagination\n  GET    /api/applications/{id}                       admin+director, full detail\n  GET    /api/applications/{id}/documents             admin+director\n  GET    /api/admin/applicants/export                 admin+director, streamed CSV\n  GET    /api/assignment-runs                         admin+director\n  GET    /api/admin/staff-accounts                    admin\n  POST   /api/admin/staff-accounts/{user}/resend-invite  admin\n  PATCH  /api/admin/staff-accounts/{user}/status      admin\n  GET    /api/applicant/positions                     applicant\n  GET    /api/applicant/positions/{id}                applicant\n  GET    /api/applicant/applications                  applicant\n  POST   /api/notifications/read-all                  any role\n  GET    /api/documents/{id}/download                 any role, per-role checks\n\nCHANGED (additive only -- earlier phase collections still pass)\n  GET /api/positions and GET /api/positions/{id} moved from admin-only to admin+director\n  GET /api/positions/{id}/criteria moved to admin+director\n  GET /api/applications/{id}/status-history moved to admin+director\n  GET /api/notifications gained a meta block with unread_count\n  GET /api/assignment-runs/{id} gained deeper eager loads (no keys removed)\n  GET /api/applicant/applications/{id} gained status_history (notes withheld)\n\nONE MANUAL STEP: 'Upload a Document' in folder 4 needs a PDF attached. Skip it and the download tests in folder 11 self-skip.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "mailpit_url",
+      "value": "http://localhost:8025"
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "director_token",
+      "value": ""
+    },
+    {
+      "key": "applicant_token",
+      "value": ""
+    },
+    {
+      "key": "admin_user_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_user_id",
+      "value": ""
+    },
+    {
+      "key": "department_id",
+      "value": ""
+    },
+    {
+      "key": "department_code",
+      "value": ""
+    },
+    {
+      "key": "other_department_id",
+      "value": ""
+    },
+    {
+      "key": "phase10_round_id",
+      "value": ""
+    },
+    {
+      "key": "active_round_id",
+      "value": ""
+    },
+    {
+      "key": "position_id",
+      "value": ""
+    },
+    {
+      "key": "other_position_id",
+      "value": ""
+    },
+    {
+      "key": "criterion_id",
+      "value": ""
+    },
+    {
+      "key": "application_id",
+      "value": ""
+    },
+    {
+      "key": "document_id",
+      "value": ""
+    },
+    {
+      "key": "assignment_run_id",
+      "value": ""
+    },
+    {
+      "key": "applicant_email",
+      "value": ""
+    },
+    {
+      "key": "staff_email",
+      "value": ""
+    },
+    {
+      "key": "staff_user_id",
+      "value": ""
+    },
+    {
+      "key": "admin_total_applications",
+      "value": ""
+    },
+    {
+      "key": "admin_open_positions",
+      "value": ""
+    },
+    {
+      "key": "admin_position_count",
+      "value": ""
+    },
+    {
+      "key": "pool_entry_id",
+      "value": ""
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Fresh addresses per run so re-running never trips the unique email constraint.",
+          "if (!pm.collectionVariables.get('run_stamp')) {",
+          "  pm.collectionVariables.set('run_stamp', Date.now());",
+          "}",
+          "const stamp = pm.collectionVariables.get('run_stamp');",
+          "if (!pm.collectionVariables.get('applicant_email')) {",
+          "  pm.collectionVariables.set('applicant_email', `phase10.applicant.${stamp}@example.com`);",
+          "}",
+          "if (!pm.collectionVariables.get('staff_email')) {",
+          "  pm.collectionVariables.set('staff_email', `phase10.staff.${stamp}@example.com`);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup - Tokens & Reference IDs",
+      "item": [
+        {
+          "name": "Login as Seeded Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is admin', () => pm.expect(json.user.role).to.eql('admin'));",
+                  "pm.collectionVariables.set('admin_token', json.token);",
+                  "pm.collectionVariables.set('admin_user_id', json.user.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Seeded Director",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"director@mcdss.local\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Role is director', () => pm.expect(json.user.role).to.eql('director'));",
+                  "pm.collectionVariables.set('director_token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/departments (Admin) -- capture led + unled department",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/departments",
+            "description": "Phase 10 endpoint. Captures department_id (director-led) and other_department_id (not director-led) so the guard-rail folder can prove department scoping."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Returns departments', () => pm.expect(rows.length).to.be.above(0));",
+                  "pm.test('Each row exposes code + open_positions_count', () => {",
+                  "  pm.expect(rows[0]).to.have.property('code');",
+                  "  pm.expect(rows[0]).to.have.property('open_positions_count');",
+                  "});",
+                  "",
+                  "// The seeded director leads COE; anything without a director is out of scope for them.",
+                  "const led = rows.find(r => r.director !== null) || rows[0];",
+                  "const unled = rows.find(r => r.director === null);",
+                  "pm.collectionVariables.set('department_id', led.id);",
+                  "pm.collectionVariables.set('department_code', led.code);",
+                  "if (unled) { pm.collectionVariables.set('other_department_id', unled.id); }",
+                  "pm.test('Found a director-led department for scope tests', () => pm.expect(led.director).to.not.eql(null));",
+                  "pm.test('Found a department the director does NOT lead', () => pm.expect(unled).to.not.eql(undefined));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/departments (Director) -- scoped to own department only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/departments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Director sees exactly their own department(s)', () => {",
+                  "  pm.expect(rows.length).to.be.above(0);",
+                  "  rows.forEach(r => pm.expect(r.id).to.eql(pm.collectionVariables.get('department_id')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Logs in the seeded admin + director and captures the department IDs the rest of the run needs."
+    },
+    {
+      "name": "1. Hiring Rounds (new CRUD)",
+      "item": [
+        {
+          "name": "POST /api/hiring-rounds (Admin) -- create Phase 10 round",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds",
+            "description": "Created as 'closed' so it never competes with the seeded active round that the application flow depends on.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Phase 10 Verification Round\",\n  \"semester\": \"1st Semester\",\n  \"academic_year\": 2028,\n  \"start_date\": \"2028-06-01\",\n  \"end_date\": \"2028-10-31\",\n  \"status\": \"closed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const round = pm.response.json().data;",
+                  "pm.collectionVariables.set('phase10_round_id', round.id);",
+                  "pm.test('Echoes the submitted fields', () => {",
+                  "  pm.expect(round.name).to.eql('Phase 10 Verification Round');",
+                  "  pm.expect(round.academic_year).to.eql(2028);",
+                  "  pm.expect(round.status).to.eql('closed');",
+                  "});",
+                  "pm.test('created_at is resolved from the DB default', () => pm.expect(round.created_at).to.not.eql(null));",
+                  "pm.test('applications_count starts at 0', () => pm.expect(round.applications_count).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/hiring-rounds (Admin) -- list with application counts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('New round appears in the list', () => {",
+                  "  const found = rows.find(r => r.id === pm.collectionVariables.get('phase10_round_id'));",
+                  "  pm.expect(found).to.not.eql(undefined);",
+                  "});",
+                  "pm.test('Rows carry applications_count', () => pm.expect(rows[0]).to.have.property('applications_count'));",
+                  "pm.test('Sorted newest start_date first', () => {",
+                  "  const dates = rows.map(r => r.start_date);",
+                  "  pm.expect(dates).to.eql([...dates].sort().reverse());",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/hiring-rounds?status=active",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds?status=active"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Only active rounds returned', () => rows.forEach(r => pm.expect(r.status).to.eql('active')));",
+                  "if (rows.length) { pm.collectionVariables.set('active_round_id', rows[0].id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/hiring-rounds/{id} (Director) -- read access allowed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds/{{phase10_round_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns the requested round', () => pm.expect(pm.response.json().data.id).to.eql(pm.collectionVariables.get('phase10_round_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/hiring-rounds/{id} -- partial update (name only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds/{{phase10_round_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Phase 10 Verification Round (renamed)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const round = pm.response.json().data;",
+                  "pm.test('Name updated', () => pm.expect(round.name).to.eql('Phase 10 Verification Round (renamed)'));",
+                  "pm.test('Untouched dates preserved', () => {",
+                  "  pm.expect(round.start_date).to.eql('2028-06-01');",
+                  "  pm.expect(round.end_date).to.eql('2028-10-31');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/hiring-rounds/{id} -- end_date only (start_date backfilled)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds/{{phase10_round_id}}",
+            "description": "UpdateHiringRoundRequest backfills the stored start_date so the after_or_equal rule can run on a partial payload.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"end_date\": \"2028-12-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('end_date accepted without resending start_date', () => pm.expect(pm.response.json().data.end_date).to.eql('2028-12-15'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Validation] PUT end_date before start_date -> 422",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds/{{phase10_round_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"end_date\": \"2027-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('end_date is the rejected field', () => pm.expect(pm.response.json().errors).to.have.property('end_date'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Validation] POST with academic_year below 2000 -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bad Round\",\n  \"semester\": \"1st Semester\",\n  \"academic_year\": 1999,\n  \"start_date\": \"2028-06-01\",\n  \"end_date\": \"2028-10-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('academic_year rejected', () => pm.expect(pm.response.json().errors).to.have.property('academic_year'));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "GET/POST/PUT for hiring rounds. Before Phase 10 only POST /hiring-rounds/{id}/close existed, so the admin hiring-rounds screen had no way to list or create rounds."
+    },
+    {
+      "name": "2. Dashboard Stats",
+      "item": [
+        {
+          "name": "GET /api/dashboard/stats (Admin) -- unscoped counters",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/dashboard/stats",
+            "description": "Drives the admin dashboard stat cards + activity feed. Counters exclude drafts and are restricted to the active hiring round."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.collectionVariables.set('admin_total_applications', d.total_applications);",
+                  "pm.collectionVariables.set('admin_open_positions', d.open_positions);",
+                  "pm.test('All counter keys present', () => {",
+                  "  ['active_round','open_positions','total_positions','total_slots','filled_slots',",
+                  "   'total_applicants','total_applications','pending_reviews','hired_count','scored_count',",
+                  "   'pool_members','applications_by_status','recent_activity']",
+                  "    .forEach(k => pm.expect(d).to.have.property(k));",
+                  "});",
+                  "pm.test('Counters are numeric', () => {",
+                  "  ['open_positions','total_applications','pending_reviews','hired_count'].forEach(k =>",
+                  "    pm.expect(d[k]).to.be.a('number'));",
+                  "});",
+                  "pm.test('applications_by_status covers every non-draft status', () => {",
+                  "  ['applied','for_interview','for_review','hired','rejected','withdrawn']",
+                  "    .forEach(s => pm.expect(d.applications_by_status).to.have.property(s));",
+                  "});",
+                  "pm.test('Status buckets sum to total_applications', () => {",
+                  "  const sum = Object.values(d.applications_by_status).reduce((a,b) => a+b, 0);",
+                  "  pm.expect(sum).to.eql(d.total_applications);",
+                  "});",
+                  "pm.test('total_applicants never exceeds total_applications', () =>",
+                  "  pm.expect(d.total_applicants).to.be.at.most(d.total_applications));",
+                  "pm.test('recent_activity is capped at 10 and newest first', () => {",
+                  "  pm.expect(d.recent_activity.length).to.be.at.most(10);",
+                  "  const ts = d.recent_activity.map(a => a.timestamp);",
+                  "  pm.expect(ts).to.eql([...ts].sort().reverse());",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/dashboard/stats (Director) -- department-scoped",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/dashboard/stats"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Same response shape as admin', () => {",
+                  "  ['open_positions','total_applications','recent_activity','applications_by_status']",
+                  "    .forEach(k => pm.expect(d).to.have.property(k));",
+                  "});",
+                  "pm.test('Director counters never exceed the admin (unscoped) totals', () => {",
+                  "  pm.expect(d.total_applications).to.be.at.most(Number(pm.collectionVariables.get('admin_total_applications')));",
+                  "  pm.expect(d.open_positions).to.be.at.most(Number(pm.collectionVariables.get('admin_open_positions')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Position Read Access (Admin + Director)",
+      "item": [
+        {
+          "name": "GET /api/positions (Admin) -- now carries applications_count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions",
+            "description": "GET /api/positions moved from the admin-only group into the shared admin+director group; applications_count is new in Phase 10."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test('Returns positions', () => pm.expect(rows.length).to.be.above(0));",
+                  "pm.test('Each row has criteria_count and applications_count', () => {",
+                  "  pm.expect(rows[0]).to.have.property('criteria_count');",
+                  "  pm.expect(rows[0]).to.have.property('applications_count');",
+                  "});",
+                  "pm.collectionVariables.set('admin_position_count', rows.length);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/positions?status=open (filter)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions?status=open"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test('Only open positions', () => rows.forEach(p => pm.expect(p.status).to.eql('open')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/positions?department_id={{department_id}} (filter)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions?department_id={{department_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test('Only the requested department', () => rows.forEach(p =>",
+                  "  pm.expect(p.department_id).to.eql(pm.collectionVariables.get('department_id'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/positions (Director) -- scoped, never more than admin sees",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test('Director read access works (was 403 before Phase 10)', () => pm.expect(rows).to.be.an('array'));",
+                  "pm.test('Count does not exceed the admin count', () =>",
+                  "  pm.expect(rows.length).to.be.at.most(Number(pm.collectionVariables.get('admin_position_count'))));",
+                  "pm.test('Every position belongs to the director department', () => rows.forEach(p =>",
+                  "  pm.expect(p.department_id).to.eql(pm.collectionVariables.get('department_id'))));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Fixture - Position, Applicant, Submitted Application",
+      "item": [
+        {
+          "name": "Create Position in the Director's Department (external, 1 slot)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Phase 10 Verification Lecturer\",\n  \"description\": \"Fixture position for Phase 10 endpoint verification.\",\n  \"target_applicant_type\": \"external\",\n  \"slots_available\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const p = pm.response.json();",
+                  "pm.collectionVariables.set('position_id', p.id);",
+                  "pm.test('Created in the director-led department', () =>",
+                  "  pm.expect(p.department_id).to.eql(pm.collectionVariables.get('department_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Numeric Criterion (weight 1.0)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/criteria",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Years of Teaching Experience\",\n  \"data_type\": \"numeric\",\n  \"weight\": 1.0,\n  \"min_value\": 0,\n  \"max_value\": 20,\n  \"is_required\": true,\n  \"display_order\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('criterion_id', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Open the Position",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"open\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Position is open', () => pm.expect(pm.response.json().data.status).to.eql('open'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Phase 10 Applicant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/register",
+            "description": "applicant_email is generated by the collection-level pre-request script so each run gets a fresh account.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Phase10\",\n  \"last_name\": \"Applicant\",\n  \"email\": \"{{applicant_email}}\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\",\n  \"applicant_type\": \"external\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Phase 10 Applicant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{applicant_email}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('applicant_token', json.token);",
+                  "pm.collectionVariables.set('applicant_user_id', json.user.id);",
+                  "pm.test('Role is external_applicant', () => pm.expect(json.user.role).to.eql('external_applicant'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Draft Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position_id\": \"{{position_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const app = pm.response.json();",
+                  "pm.collectionVariables.set('application_id', app.id);",
+                  "pm.test('Starts as draft', () => pm.expect(app.status).to.eql('draft'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save Form Response",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"responses\": [\n    {\n      \"criterion_id\": \"{{criterion_id}}\",\n      \"raw_value\": \"8\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload a Document (ATTACH ANY PDF MANUALLY -- enables the download test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/documents",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "document_type",
+                  "value": "transcript",
+                  "type": "text"
+                },
+                {
+                  "key": "application_id",
+                  "value": "{{application_id}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Postman cannot ship a binary inside a collection file. Attach any small PDF before running, or skip this request and the two download tests that depend on document_id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Self-skips when no file is attached so an unattended run stays green.",
+                  "if (pm.response.code === 422) {",
+                  "  pm.test.skip('No file attached - upload and the folder 11 download tests are skipped');",
+                  "} else {",
+                  "  pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "  pm.collectionVariables.set('document_id', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/submit"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is applied', () => pm.expect(pm.response.json().data.status).to.eql('applied'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Advance Status: applied -> for_interview (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/status",
+            "description": "Creates a status_history row so the detail + activity-feed assertions have data.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"for_interview\",\n  \"notes\": \"Phase 10 fixture transition.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Score the Position (Admin) -- populates total_wsm_score",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{position_id}}/score"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Builds a self-contained fixture in the director's department: an open position with one criterion, a fresh applicant, and a submitted + scored application at for_interview."
+    },
+    {
+      "name": "5. Applicant Table & Detail (new)",
+      "item": [
+        {
+          "name": "GET /api/applications (Admin) -- paginated list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?per_page=5",
+            "description": "Backs the admin/applicants table. Drafts are excluded by default because they are the applicant's private workspace."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Envelope has data + meta', () => {",
+                  "  pm.expect(body).to.have.property('data');",
+                  "  pm.expect(body).to.have.property('meta');",
+                  "});",
+                  "pm.test('Pagination meta is complete', () => {",
+                  "  ['current_page','per_page','total','last_page'].forEach(k => pm.expect(body.meta).to.have.property(k));",
+                  "  pm.expect(body.meta.per_page).to.eql(5);",
+                  "});",
+                  "pm.test('Page honours per_page', () => pm.expect(body.data.length).to.be.at.most(5));",
+                  "const row = body.data[0];",
+                  "pm.test('Row nests applicant, position and hiring_round', () => {",
+                  "  ['id','applicant','position','hiring_round','status','total_wsm_score','applied_at'].forEach(k =>",
+                  "    pm.expect(row).to.have.property(k));",
+                  "  pm.expect(row.applicant).to.have.property('full_name');",
+                  "  pm.expect(row.applicant).to.have.property('applicant_type');",
+                  "  pm.expect(row.position.department).to.have.property('code');",
+                  "});",
+                  "pm.test('No drafts leak into the HR table', () =>",
+                  "  body.data.forEach(r => pm.expect(r.status).to.not.eql('draft')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications?search=Phase10 -- name/email search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?search=Phase10"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Fixture applicant is found by name', () => {",
+                  "  const found = rows.find(r => r.id === pm.collectionVariables.get('application_id'));",
+                  "  pm.expect(found).to.not.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications?status=for_interview -- status filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?status=for_interview"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Only for_interview returned', () => rows.forEach(r => pm.expect(r.status).to.eql('for_interview')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications?status=applied,hired -- comma-separated statuses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?status=applied,hired"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Only the two requested statuses', () => rows.forEach(r =>",
+                  "  pm.expect(['applied','hired']).to.include(r.status)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications?applicant_type=external -- type filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?applicant_type=external"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Only external applicants', () => rows.forEach(r =>",
+                  "  pm.expect(r.applicant.applicant_type).to.eql('external')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications?department_id={{department_id}} -- department filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?department_id={{department_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Only the requested department', () => rows.forEach(r =>",
+                  "  pm.expect(r.position.department.id).to.eql(pm.collectionVariables.get('department_id'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications?sort_by=total_wsm_score&sort_dir=desc -- sorting",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?sort_by=total_wsm_score&sort_dir=desc&per_page=50",
+            "description": "Postgres defaults to NULLS FIRST on DESC; the controller forces NULLS LAST so unscored applications never outrank scored ones in the HR table."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "const scored = rows.filter(r => r.total_wsm_score !== null).map(r => Number(r.total_wsm_score));",
+                  "pm.test('Scored rows are in descending order', () => {",
+                  "  for (let i = 1; i < scored.length; i++) { pm.expect(scored[i]).to.be.at.most(scored[i-1]); }",
+                  "});",
+                  "pm.test('Unscored rows sort last (NULLS LAST), never to the top', () => {",
+                  "  const firstNull = rows.findIndex(r => r.total_wsm_score === null);",
+                  "  if (firstNull !== -1) {",
+                  "    rows.slice(firstNull).forEach(r => pm.expect(r.total_wsm_score).to.eql(null));",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications?include_drafts=true -- opt-in draft visibility",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications?include_drafts=true&per_page=100"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Total is at least the non-draft total', () => pm.expect(body.meta.total).to.be.at.least(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications/{id} (Admin) -- full review detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Detail adds responses, documents and status_history', () => {",
+                  "  ['responses','documents','status_history','summary','parsed_resume_data','account_created_at']",
+                  "    .forEach(k => pm.expect(d).to.have.property(k));",
+                  "});",
+                  "pm.test('Saved form response is present with its criterion', () => {",
+                  "  pm.expect(d.responses.length).to.be.above(0);",
+                  "  pm.expect(d.responses[0].criterion).to.have.property('name');",
+                  "  pm.expect(d.responses[0].criterion).to.have.property('weight');",
+                  "});",
+                  "pm.test('status_history captures the fixture transition', () => {",
+                  "  const t = d.status_history.find(h => h.new_status === 'for_interview');",
+                  "  pm.expect(t).to.not.eql(undefined);",
+                  "  pm.expect(t.previous_status).to.eql('applied');",
+                  "  pm.expect(t.changed_by).to.not.eql(null);",
+                  "});",
+                  "pm.test('Admin sees internal notes on history', () => {",
+                  "  const t = d.status_history.find(h => h.new_status === 'for_interview');",
+                  "  pm.expect(t).to.have.property('notes');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications/{id}/documents (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/documents",
+            "description": "Returns documents attached to this application plus the applicant's profile-level uploads (resume/TOR), which carry no application_id but belong to the same review packet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Returns a data array', () => pm.expect(rows).to.be.an('array'));",
+                  "if (rows.length) {",
+                  "  pm.test('Rows expose a download_url', () => pm.expect(rows[0]).to.have.property('download_url'));",
+                  "  pm.test('Rows expose size + verification flag', () => {",
+                  "    pm.expect(rows[0]).to.have.property('file_size_bytes');",
+                  "    pm.expect(rows[0]).to.have.property('is_verified');",
+                  "  });",
+                  "} else {",
+                  "  console.log('No documents uploaded - the manual upload request was skipped.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applications/{id} (Director) -- in-department access allowed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Director reads an application in their department', () =>",
+                  "  pm.expect(pm.response.json().data.id).to.eql(pm.collectionVariables.get('application_id')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. CSV Export",
+      "item": [
+        {
+          "name": "GET /api/admin/applicants/export -- full CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/applicants/export",
+            "description": "Streamed download (chunked at 500 rows) so a large hiring round never builds the whole file in memory."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is CSV', () =>",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/csv'));",
+                  "pm.test('Sent as a file attachment', () =>",
+                  "  pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment'));",
+                  "const csv = pm.response.text();",
+                  "const lines = csv.trim().split('\\n');",
+                  "pm.test('Header row matches the documented columns', () => {",
+                  "  pm.expect(lines[0]).to.include('Application ID');",
+                  "  pm.expect(lines[0]).to.include('WSM Score');",
+                  "  pm.expect(lines[0]).to.include('Hiring Round');",
+                  "});",
+                  "pm.test('At least one data row', () => pm.expect(lines.length).to.be.above(1));",
+                  "pm.test('Fixture applicant appears in the export', () => pm.expect(csv).to.include('Phase10'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/admin/applicants/export?status=for_interview -- filters apply to CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/applicants/export?status=for_interview",
+            "description": "Export reuses the exact filter pipeline as GET /api/applications, so the CSV always matches what the table is showing."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const lines = pm.response.text().trim().split('\\n');",
+                  "pm.test('Every data row is for_interview', () => {",
+                  "  lines.slice(1).forEach(l => pm.expect(l).to.include('for_interview'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/admin/applicants/export (Director) -- scoped CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/applicants/export"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Director can export their own department', () =>",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/csv'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Assignment Run History (new index)",
+      "item": [
+        {
+          "name": "GET /api/assignment-runs -- history, newest first",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs",
+            "description": "The assignment screen needs the latest run without already knowing its ID; before Phase 10 only show-by-id existed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Returns a data array', () => pm.expect(rows).to.be.an('array'));",
+                  "if (rows.length) {",
+                  "  pm.collectionVariables.set('assignment_run_id', rows[0].id);",
+                  "  pm.test('Rows carry summary + assigned_count', () => {",
+                  "    ['id','hiring_round','status','result_summary','assigned_count','run_at'].forEach(k =>",
+                  "      pm.expect(rows[0]).to.have.property(k));",
+                  "  });",
+                  "  pm.test('Sorted newest run_at first', () => {",
+                  "    const ts = rows.map(r => r.run_at);",
+                  "    pm.expect(ts).to.eql([...ts].sort().reverse());",
+                  "  });",
+                  "} else {",
+                  "  console.log('No assignment runs yet - run the Phase 7 collection first for richer coverage.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/assignment-runs?limit=1 -- limit honoured",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs?limit=1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('At most one row', () => pm.expect(pm.response.json().data.length).to.be.at.most(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/assignment-runs/{id} -- results now include applicant names",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs/{{assignment_run_id}}",
+            "description": "Phase 10 only deepens the eager loads; every Phase 7 response key is preserved."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Skipped when no run exists yet.",
+                  "if (!pm.collectionVariables.get('assignment_run_id')) {",
+                  "  pm.test.skip('No assignment run available');",
+                  "} else {",
+                  "  pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "  const run = pm.response.json();",
+                  "  pm.test('Phase 7 keys unchanged', () => {",
+                  "    ['id','hiring_round_id','status','result_summary','results'].forEach(k =>",
+                  "      pm.expect(run).to.have.property(k));",
+                  "  });",
+                  "  if (run.results.length) {",
+                  "    pm.test('Results now nest application -> applicant_profile -> user', () => {",
+                  "      pm.expect(run.results[0]).to.have.property('application');",
+                  "      pm.expect(run.results[0].application.applicant_profile.user).to.have.property('first_name');",
+                  "    });",
+                  "    pm.test('Results nest position -> department', () =>",
+                  "      pm.expect(run.results[0].position.department).to.have.property('code'));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Staff Account Management",
+      "item": [
+        {
+          "name": "GET /api/admin/staff-accounts -- list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts",
+            "description": "Only POST existed before Phase 10, so the staff-accounts screen had nothing to render."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Returns staff rows', () => pm.expect(rows.length).to.be.above(0));",
+                  "pm.test('Rows expose account_status + has_temp_password', () => {",
+                  "  ['full_name','email','role','account_status','has_temp_password','created_at'].forEach(k =>",
+                  "    pm.expect(rows[0]).to.have.property(k));",
+                  "});",
+                  "pm.test('Self-registered applicants are excluded', () => rows.forEach(r =>",
+                  "  pm.expect(['admin','director','internal_applicant']).to.include(r.role)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/admin/staff-accounts -- create a director account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Phase10\",\n  \"last_name\": \"Staff\",\n  \"email\": \"{{staff_email}}\",\n  \"role\": \"director\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('staff_user_id', pm.response.json().user.id);",
+                  "pm.test('Role echoed as director', () => pm.expect(pm.response.json().user.role).to.eql('director'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/admin/staff-accounts?search=Phase10 -- search filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts?search=Phase10"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('New account is findable by name', () => {",
+                  "  const found = rows.find(r => r.id === pm.collectionVariables.get('staff_user_id'));",
+                  "  pm.expect(found).to.not.eql(undefined);",
+                  "  pm.expect(found.has_temp_password).to.eql(true);",
+                  "  pm.expect(found.account_status).to.eql('active');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/admin/staff-accounts?role=director -- role filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts?role=director"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Only directors', () => pm.response.json().data.forEach(r =>",
+                  "  pm.expect(r.role).to.eql('director')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/admin/staff-accounts/{user}/resend-invite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts/{{staff_user_id}}/resend-invite",
+            "description": "The original temp password is hashed and unrecoverable, so a fresh one is issued and the account's existing tokens are revoked. Check Mailpit for the new password."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Confirms the resend', () => pm.expect(pm.response.json().message).to.include('resent'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Resend Email Landed in Mailpit",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mailpit_url}}/api/v1/messages?limit=25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const msgs = pm.response.json().messages;",
+                  "const target = pm.collectionVariables.get('staff_email');",
+                  "pm.test('A message was sent to the staff address', () => {",
+                  "  const found = msgs.find(m => (m.To || []).some(t => t.Address === target));",
+                  "  pm.expect(found).to.not.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/admin/staff-accounts/{user}/status -- deactivate",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts/{{staff_user_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Reported as inactive', () => pm.expect(pm.response.json().data.account_status).to.eql('inactive'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/admin/staff-accounts/{user}/status -- reactivate",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts/{{staff_user_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Reported as active', () => pm.expect(pm.response.json().data.account_status).to.eql('active'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Admin cannot deactivate their own account -> 422",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts/{{admin_user_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Explains the self-lockout guard', () =>",
+                  "  pm.expect(pm.response.json().message).to.include('your own account'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Staff status change on an applicant account -> 404",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts/{{applicant_user_id}}/status",
+            "description": "Guards against the staff screen being used to disable self-registered applicants.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Applicant accounts are out of scope for this screen', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Notifications - Unread Count & Bulk Read",
+      "item": [
+        {
+          "name": "GET /api/notifications (Applicant) -- meta.unread_count is new",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Phase 9 data array still present', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('Phase 10 adds meta.total + meta.unread_count', () => {",
+                  "  pm.expect(body.meta).to.have.property('total');",
+                  "  pm.expect(body.meta).to.have.property('unread_count');",
+                  "});",
+                  "pm.test('Fixture generated notifications', () => pm.expect(body.data.length).to.be.above(0));",
+                  "pm.test('unread_count matches the unread rows', () => {",
+                  "  const unread = body.data.filter(n => n.read_at === null).length;",
+                  "  pm.expect(body.meta.unread_count).to.eql(unread);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/notifications?unread_only=true",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications?unread_only=true"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Every row is unread', () => body.data.forEach(n => pm.expect(n.read_at).to.eql(null)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/notifications/read-all",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications/read-all"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Reports how many were updated', () => pm.expect(body.updated_count).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/notifications -- unread_count is now 0",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Nothing unread remains', () => pm.expect(body.meta.unread_count).to.eql(0));",
+                  "pm.test('Every row has a read_at', () => body.data.forEach(n =>",
+                  "  pm.expect(n.read_at).to.not.eql(null)));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Applicant Portal (new endpoints)",
+      "item": [
+        {
+          "name": "GET /api/applicant/positions -- eligible open positions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant/positions",
+            "description": "GET /api/positions is admin+director only, so the portal had no way to browse. Eligibility follows target_applicant_type; a NULL deadline means none was set and stays visible."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Returns positions', () => pm.expect(rows.length).to.be.above(0));",
+                  "pm.test('Only open positions', () => rows.forEach(p => pm.expect(p.status).to.eql('open')));",
+                  "pm.test('Internal-only postings are hidden from an external applicant', () =>",
+                  "  rows.forEach(p => pm.expect(['external','both']).to.include(p.target_applicant_type)));",
+                  "pm.test('Rows expose criteria_count and the applied flag', () => {",
+                  "  ['id','title','department','slots_available','criteria_count','has_applied','application_status']",
+                  "    .forEach(k => pm.expect(rows[0]).to.have.property(k));",
+                  "});",
+                  "pm.test('The fixture position is flagged has_applied', () => {",
+                  "  const p = rows.find(r => r.id === pm.collectionVariables.get('position_id'));",
+                  "  pm.expect(p).to.not.eql(undefined);",
+                  "  pm.expect(p.has_applied).to.eql(true);",
+                  "  pm.expect(p.application_status).to.eql('for_interview');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applicant/positions?search=Phase 10 -- title search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant/positions?search=Phase 10"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Search narrows to matching titles', () => pm.response.json().data.forEach(p =>",
+                  "  pm.expect(p.title.toLowerCase()).to.include('phase 10')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applicant/positions/{id} -- detail with application_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant/positions/{{position_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Links back to the applicant existing application', () =>",
+                  "  pm.expect(d.application_id).to.eql(pm.collectionVariables.get('application_id')));",
+                  "pm.test('Includes the full description', () => pm.expect(d).to.have.property('description'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applicant/applications -- my applications list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant/applications",
+            "description": "Drafts ARE included here so an unfinished application can be resumed from the portal."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('The fixture application is listed', () => {",
+                  "  const found = rows.find(r => r.id === pm.collectionVariables.get('application_id'));",
+                  "  pm.expect(found).to.not.eql(undefined);",
+                  "  pm.expect(found.status).to.eql('for_interview');",
+                  "});",
+                  "pm.test('Rows carry position, round and documents_count', () => {",
+                  "  ['id','position','hiring_round','status','documents_count','applied_at'].forEach(k =>",
+                  "    pm.expect(rows[0]).to.have.property(k));",
+                  "});",
+                  "pm.test('No WSM score is exposed to the applicant', () =>",
+                  "  rows.forEach(r => pm.expect(r).to.not.have.property('total_wsm_score')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applicant/applications/{id} -- status tracker + history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant/applications/{{application_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Phase 5 pipeline keys unchanged', () => {",
+                  "  ['status','pipeline_position','total_steps','position','hiring_round'].forEach(k =>",
+                  "    pm.expect(d).to.have.property(k));",
+                  "});",
+                  "pm.test('Phase 10 adds status_history', () => pm.expect(d.status_history).to.be.an('array'));",
+                  "pm.test('History shows the applied -> for_interview move', () => {",
+                  "  const t = d.status_history.find(h => h.new_status === 'for_interview');",
+                  "  pm.expect(t).to.not.eql(undefined);",
+                  "});",
+                  "pm.test('Internal HR notes are NOT exposed to the applicant', () =>",
+                  "  d.status_history.forEach(h => pm.expect(h).to.not.have.property('notes')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11. Document Download",
+      "item": [
+        {
+          "name": "GET /api/documents/{id}/download (Applicant, own file)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/documents/{{document_id}}/download"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('document_id')) {",
+                  "  pm.test.skip('No document uploaded - the manual upload request was skipped');",
+                  "} else {",
+                  "  pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "  pm.test('Sent as an attachment', () =>",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment'));",
+                  "  pm.test('Body is not empty', () => pm.expect(pm.response.responseSize).to.be.above(0));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/documents/{id}/download (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/documents/{{document_id}}/download"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('document_id')) {",
+                  "  pm.test.skip('No document uploaded');",
+                  "} else {",
+                  "  pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/documents/{id}/download (Director, in-department applicant)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/documents/{{document_id}}/download"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('document_id')) {",
+                  "  pm.test.skip('No document uploaded');",
+                  "} else {",
+                  "  pm.test('Status is 200 - applicant applied inside the director department', () =>",
+                  "    pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Guard Rail] Unauthenticated download -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/documents/{{document_id}}/download"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('document_id')) {",
+                  "  pm.test.skip('No document uploaded');",
+                  "} else {",
+                  "  pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Documents live on the private local disk and are never publicly reachable; every download goes through a per-role authorization check."
+    },
+    {
+      "name": "12. Guard Rails - Role & Department Isolation",
+      "item": [
+        {
+          "name": "Fixture: Position in a department the Director does NOT lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{other_department_id}}\",\n  \"title\": \"Phase 10 Out-Of-Scope Probe\",\n  \"target_applicant_type\": \"both\",\n  \"slots_available\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('other_position_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Scope] Director cannot read an out-of-department position -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{other_position_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('404 hides existence rather than confirming it with 403', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Scope] Admin CAN read the same position -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{other_position_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Scope] Director cannot read out-of-department criteria -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{other_position_id}}/criteria"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Scope] Director cannot read out-of-department rankings -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions/{{other_position_id}}/rankings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Scope] Out-of-department position absent from the Director list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().map(p => p.id);",
+                  "pm.test('Probe position is filtered out', () =>",
+                  "  pm.expect(ids).to.not.include(pm.collectionVariables.get('other_position_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Director cannot create a position -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/positions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": \"{{department_id}}\",\n  \"title\": \"Should Not Exist\",\n  \"target_applicant_type\": \"both\",\n  \"slots_available\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Director cannot create a hiring round -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/hiring-rounds",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Should Not Exist\",\n  \"semester\": \"1st Semester\",\n  \"academic_year\": 2029,\n  \"start_date\": \"2029-01-01\",\n  \"end_date\": \"2029-06-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/applicant-pool (Director) -- read allowed, capture an entry",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant-pool",
+            "description": "Directors keep read access to the pool; only the two mutating routes moved to admin-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data;",
+                  "pm.test('Director retains READ access to the pool', () => pm.expect(rows).to.be.an('array'));",
+                  "if (rows.length) { pm.collectionVariables.set('pool_entry_id', rows[0].id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Director cannot trigger an assignment run -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/assignment-runs",
+            "description": "Moved from the shared group to admin-only in Phase 10 per the plan's read-only director rule.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiring_round_id\": \"{{active_round_id}}\",\n  \"scope_applicant_type\": \"external\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Director cannot re-engage a pool entry -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant-pool/{{pool_entry_id}}/reengage",
+            "description": "Was director-writable in Phases 8-9; admin-only from Phase 10."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('pool_entry_id')) {",
+                  "  pm.test.skip('No pool entry available - close a round first');",
+                  "} else {",
+                  "  pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Director cannot change a pool status -> 403",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant-pool/{{pool_entry_id}}/status",
+            "description": "Was director-writable in Phases 8-9; admin-only from Phase 10.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"expired\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('pool_entry_id')) {",
+                  "  pm.test.skip('No pool entry available');",
+                  "} else {",
+                  "  pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Director cannot list staff accounts -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/staff-accounts"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Director cannot change an application status -> 403",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{director_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications/{{application_id}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"hired\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Applicant cannot reach the HR applicant table -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Applicant cannot reach dashboard stats -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/dashboard/stats"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Applicant cannot export the CSV -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/applicants/export"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Role] Applicant cannot list departments -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{applicant_token}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/departments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Auth] Unauthenticated dashboard stats -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/dashboard/stats"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Auth] Unauthenticated CSV export -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/admin/applicants/export"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[Auth] Unauthenticated applicant positions -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/applicant/positions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Proves the Phase 10 shared-access change did not widen permissions: directors read only their own departments and never mutate, applicants never reach HR surfaces."
+    }
+  ]
+}

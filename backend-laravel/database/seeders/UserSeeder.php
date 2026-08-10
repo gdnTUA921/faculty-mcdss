@@ -2,12 +2,19 @@
 
 namespace Database\Seeders;
 
+use App\Models\ApplicantProfile;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 class UserSeeder extends Seeder
 {
+    /** Applicant roles cannot use any /api/applicant/* endpoint without a profile row. */
+    private const PROFILE_TYPE_FOR_ROLE = [
+        'internal_applicant' => 'internal',
+        'external_applicant' => 'external',
+    ];
+
     public function run(): void
     {
         $users = [
@@ -42,7 +49,20 @@ class UserSeeder extends Seeder
         ];
 
         foreach ($users as $data) {
-            User::firstOrCreate(['email' => $data['email']], $data);
+            $user = User::firstOrCreate(['email' => $data['email']], $data);
+
+            // Without this, every /api/applicant/* call for the seeded applicants 422s with
+            // "Applicant profile not found for this user."
+            if ($type = self::PROFILE_TYPE_FOR_ROLE[$user->role] ?? null) {
+                ApplicantProfile::firstOrCreate(
+                    ['user_id' => $user->id],
+                    [
+                        'applicant_type'    => $type,
+                        'institution_email' => $type === 'internal' ? $user->email : null,
+                        'summary'           => "Seeded {$type} applicant for local development.",
+                    ],
+                );
+            }
         }
     }
 }

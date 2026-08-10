@@ -8,6 +8,7 @@ use App\Models\AssignmentRun;
 use App\Models\AssignmentResult;
 use App\Services\AssignmentSolverService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -79,10 +80,54 @@ class AssignmentRunController extends Controller
         }
     }
 
+    /**
+     * Run history, newest first. The assignment screen loads this to find the
+     * latest completed run without already knowing its ID.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $runs = AssignmentRun::with(['hiringRound:id,name,semester,academic_year', 'runner:id,first_name,last_name'])
+            ->withCount(['results as assigned_count' => fn ($q) => $q->where('is_assigned', true)])
+            ->when($request->filled('hiring_round_id'), fn ($q) => $q->where('hiring_round_id', $request->input('hiring_round_id')))
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
+            ->orderByDesc('run_at')
+            ->limit(min((int) $request->input('limit', 25), 100))
+            ->get()
+            ->map(fn ($run) => [
+                'id'                   => $run->id,
+                'hiring_round'         => $run->hiringRound ? [
+                    'id'            => $run->hiringRound->id,
+                    'name'          => $run->hiringRound->name,
+                    'semester'      => $run->hiringRound->semester,
+                    'academic_year' => $run->hiringRound->academic_year,
+                ] : null,
+                'scope_applicant_type' => $run->scope_applicant_type,
+                'status'               => $run->status,
+                'result_summary'       => $run->result_summary,
+                'assigned_count'       => $run->assigned_count,
+                'run_by'               => $run->runner
+                    ? trim($run->runner->first_name . ' ' . $run->runner->last_name)
+                    : null,
+                'run_at'               => $run->run_at?->toIso8601String(),
+                'completed_at'         => $run->completed_at?->toIso8601String(),
+            ]);
+
+        return response()->json(['data' => $runs]);
+    }
+
     public function show(AssignmentRun $assignmentRun): JsonResponse
     {
-        return response()->json(
-            $assignmentRun->load(['results', 'hiringRound', 'runner'])
-        );
+        // Phase 7 keys are unchanged; the deeper eager loads add the applicant
+        // and position detail the results table needs to render names.
+        $assignmentRun->load([
+            'hiringRound',
+            'runner',
+            'results.application.applicantProfile.user:id,first_name,last_name,email',
+            'results.application.applicantProfile:id,user_id,applicant_type',
+            'results.position:id,title,department_id',
+            'results.position.department:id,name,code',
+        ]);
+
+        return response()->json($assignmentRun);
     }
 }
